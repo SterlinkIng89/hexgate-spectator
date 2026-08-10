@@ -5,22 +5,22 @@ import pydirectinput
 import threading
 import urllib3
 
-# Suprimir advertencias de certificados auto-firmados
+# Suppress self-signed certificate warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
 def wait_for_game_and_setup_camera(delay=3.0):
     """
-    Se conecta a la Live Client Data API del juego (puerto 2999).
-    Espera a que la partida comience (tiempo > 0) y ejecuta la macro de cámara.
+    Connects to the game's Live Client Data API (port 2999).
+    Waits for the game to start (time > 0) and executes the camera macro.
     """
-    logger.info("Esperando a que el proceso del juego cargue completamente (Pantalla de carga)...")
+    logger.info("Waiting for the game process to fully load (Loading Screen)...")
     
     url = "https://127.0.0.1:2999/liveclientdata/gamestats"
     game_started = False
     
-    # Intentar hasta por 10 minutos (600 iteraciones de 1 segundo)
+    # Try for up to 10 minutes (600 iterations of 1 second)
     for _ in range(600):
         try:
             res = requests.get(url, verify=False, timeout=2)
@@ -29,49 +29,49 @@ def wait_for_game_and_setup_camera(delay=3.0):
                 game_time = data.get("gameTime", 0)
                 
                 if game_time > 1.0:
-                    logger.info(f"Partida iniciada detectada (Tiempo: {game_time}s). Configurando cámara...")
+                    logger.info(f"Game start detected (Time: {game_time}s). Setting up camera...")
                     game_started = True
                     break
         except requests.exceptions.RequestException:
-            # El juego aún no está listo o la pantalla de carga no ha empezado
+            # Game is not ready yet or loading screen hasn't started
             pass
             
         time.sleep(1)
         
     if not game_started:
-        logger.warning("No se detectó el inicio del juego dentro del tiempo límite.")
+        logger.warning("Game start not detected within the time limit.")
         return
 
-    # Esperar el retraso configurado
-    logger.info(f"Esperando {delay} segundos (Delay configurado)...")
+    # Wait for the configured delay
+    logger.info(f"Waiting {delay} seconds (Configured Delay)...")
     time.sleep(delay)
     
     try:
-        logger.info("Enviando atajos de teclado (Shift + Z)...")
-        # pydirectinput maneja mejor los juegos DirectX
+        logger.info("Sending keyboard shortcuts (Shift + Z)...")
+        # pydirectinput handles DirectX games better
         pydirectinput.keyDown('shift')
         pydirectinput.press('z')
         pydirectinput.keyUp('shift')
         
         time.sleep(0.5)
         
-        logger.info("Alejando el zoom (Scroll hacia atrás)...")
-        # Scroll hacia atrás 3 veces
+        logger.info("Zooming out (Scroll backward)...")
+        # Scroll backward 3 times
         for _ in range(3):
             pydirectinput.scroll(-1000)
             time.sleep(0.2)
             
-        logger.info("Configuración de cámara completada.")
+        logger.info("Camera setup completed.")
     except Exception as e:
-        logger.error(f"Error al enviar comandos de teclado: {e}")
+        logger.error(f"Error sending keyboard commands: {e}")
 
 def trigger_camera_automation(delay=3.0):
     """
-    Lanza el proceso de automatización en un hilo separado para no bloquear el Event Loop asíncrono.
+    Launches the automation process in a separate thread to avoid blocking the async Event Loop.
     """
     threading.Thread(target=wait_for_game_and_setup_camera, args=(delay,), daemon=True).start()
 
 if __name__ == "__main__":
-    # Prueba manual aislada si se ejecuta directamente
+    # Isolated manual test if run directly
     logging.basicConfig(level=logging.INFO)
     wait_for_game_and_setup_camera()

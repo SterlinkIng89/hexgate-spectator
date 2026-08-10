@@ -3,7 +3,8 @@ import logging
 import time
 import threading
 
-# --- Workaround para lcu_driver en MainThread ---
+# --- Workaround for lcu_driver in MainThread ---
+# lcu_driver requires an event loop to exist when instantiating Connector.
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -11,14 +12,14 @@ except RuntimeError:
 
 from lcu_driver import Connector
 
-# --- Configuración Base ---
+# --- Base Configuration ---
 TEAM_CHAOS = 200
 TEAM_ORDER = 100
 
 logger = logging.getLogger("Hexgate")
 connector = Connector()
 
-# --- Configuración Dinámica ---
+# --- Dynamic Configuration ---
 BOT_CONFIG = {
     "lobby_name": "SCRIM_TEST",
     "passwords": [],
@@ -26,7 +27,7 @@ BOT_CONFIG = {
     "invite_only": False
 }
 
-# Variables Globales de Estado
+# Global State Variables
 is_searching = False
 bot_active = False
 last_switch_attempt = 0
@@ -34,47 +35,51 @@ status_callback = None
 connector_thread_started = False
 
 GAMEFLOW_PHASES = {
-    "None": "Esperando...",
-    "Lobby": "En Lobby",
-    "Matchmaking": "Buscando partida",
-    "ReadyCheck": "Aceptando partida",
-    "ChampSelect": "Selección de Campeones",
-    "GameStart": "Juego Iniciando",
-    "InProgress": "Partida en Curso",
-    "WaitingForStats": "Esperando Estadísticas",
-    "EndOfGame": "Fin de Partida",
-    "Reconnect": "Reconectando",
+    "None": "Waiting...",
+    "Lobby": "In Lobby",
+    "Matchmaking": "Finding Match",
+    "ReadyCheck": "Accepting Match",
+    "ChampSelect": "Champion Select",
+    "GameStart": "Game Starting",
+    "InProgress": "Game In Progress",
+    "WaitingForStats": "Waiting for Stats",
+    "EndOfGame": "End of Game",
+    "Reconnect": "Reconnecting",
 }
+
+class DummyEvent:
+    def __init__(self, data):
+        self.data = data
 
 def update_gui_status(status_text):
     if status_callback:
         status_callback(status_text)
-    logger.info(f"ESTADO: {status_text}")
+    logger.info(f"STATUS: {status_text}")
 
 async def try_join_lobby_with_passwords(connection, game_id):
-    """Intenta unirse a un lobby con la lista de contraseñas configuradas."""
+    """Attempts to join a lobby using the configured list of passwords."""
     passwords_to_try = BOT_CONFIG["passwords"]
     
     if not passwords_to_try:
-        # Intento sin contraseña
-        logger.info("Intentando unirse sin contraseña...")
+        # Attempt without password
+        logger.info("Attempting to join without password...")
         res = await connection.request("post", f"/lol-lobby/v1/custom-games/{game_id}/join")
         if res.status in [200, 204]:
             return True
-        logger.warning(f"Error al unirse sin contraseña. Status: {res.status}")
+        logger.warning(f"Error joining without password. Status: {res.status}")
         return False
         
     for pwd in passwords_to_try:
-        logger.info(f"Intentando unirse con contraseña: '{pwd}'...")
+        logger.info(f"Attempting to join with password: '{pwd}'...")
         payload = {"password": pwd}
         res = await connection.request("post", f"/lol-lobby/v1/custom-games/{game_id}/join", data=payload)
         
         if res.status in [200, 204]:
-            logger.info(f"¡Éxito! Contraseña correcta: '{pwd}'")
+            logger.info(f"Success! Correct password: '{pwd}'")
             return True
             
-        logger.warning(f"Fallo con contraseña '{pwd}'. Status: {res.status}")
-        await asyncio.sleep(1) # Pequeña pausa entre intentos
+        logger.warning(f"Failed with password '{pwd}'. Status: {res.status}")
+        await asyncio.sleep(1) # Small pause between attempts
         
     return False
 
@@ -82,7 +87,7 @@ async def search_and_join_loop(connection):
     global is_searching, bot_active
     while True:
         try:
-            # Solo buscamos si el modo Invite Only está apagado
+            # We only search if Invite Only mode is disabled
             if bot_active and is_searching and not BOT_CONFIG["invite_only"]:
                 res = await connection.request("get", "/lol-lobby/v1/custom-games")
                 if res.status == 200:
@@ -92,41 +97,37 @@ async def search_and_join_loop(connection):
 
                     if target_game:
                         game_id = target_game["id"]
-                        logger.info(f"Lobby encontrado: {target_name} (ID: {game_id}). Intentando unirnos...")
+                        logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
                         
                         success = await try_join_lobby_with_passwords(connection, game_id)
                         if success:
-                            update_gui_status("Unido al Lobby")
+                            update_gui_status("Joined Lobby")
                             is_searching = False
                         else:
-                            logger.error("No se pudo entrar al lobby con ninguna de las contraseñas.")
-                            # Esperar un poco más antes de reintentar si fallaron todas las pass
+                            logger.error("Could not enter the lobby with any of the passwords.")
+                            # Wait a bit longer before retrying if all passwords failed
                             await asyncio.sleep(5)
             await asyncio.sleep(5)
         except Exception as e:
-            logger.error(f"Error en el loop de búsqueda: {e}")
+            logger.error(f"Error in search loop: {e}")
             await asyncio.sleep(5)
-
-class DummyEvent:
-    def __init__(self, data):
-        self.data = data
 
 @connector.ready
 async def connect(connection):
-    logger.info("Conectado al cliente de League of Legends.")
-    update_gui_status("Conectado a LCU")
+    logger.info("Connected to League of Legends client.")
+    update_gui_status("Connected to LCU")
     
     summoner = await connection.request("get", "/lol-summoner/v1/current-summoner")
     if summoner.status == 200:
         data = await summoner.json()
-        logger.info(f"Bienvenido, {data['displayName']}")
+        logger.info(f"Welcome, {data['displayName']}")
         
-    # Sincronizar el estado actual en caso de que el bot se inicie a mitad de un proceso
-    logger.info("Sincronizando estado actual...")
+    # Sync current state in case the bot is started mid-process
+    logger.info("Syncing current state...")
     phase_res = await connection.request("get", "/lol-gameflow/v1/gameflow-phase")
     if phase_res.status == 200:
         current_phase = await phase_res.json()
-        logger.info(f"Fase inicial detectada: {current_phase}")
+        logger.info(f"Initial phase detected: {current_phase}")
         
         if current_phase != "None" and bot_active:
             await gameflow_handler(connection, DummyEvent(current_phase))
@@ -141,8 +142,8 @@ async def connect(connection):
 
 @connector.close
 async def disconnect(_):
-    logger.info("Conexión con el cliente cerrada. Esperando reinicio...")
-    update_gui_status("Esperando cliente LCU...")
+    logger.info("Connection with the client closed. Waiting for restart...")
+    update_gui_status("Waiting for LCU client...")
 
 @connector.ws.register("/lol-lobby/v2/received-invitations", event_types=("CREATE",))
 async def auto_accept_invite(connection, event):
@@ -150,10 +151,10 @@ async def auto_accept_invite(connection, event):
     if not bot_active: return
     for invitation in event.data:
         invitation_id = invitation["invitationId"]
-        logger.info(f"Invitación recibida. Aceptando...")
+        logger.info(f"Invitation received. Accepting...")
         await connection.request("post", f"/lol-lobby/v2/received-invitations/{invitation_id}/accept")
         is_searching = False
-        update_gui_status("Invitación Aceptada")
+        update_gui_status("Invitation Accepted")
 
 @connector.ws.register("/lol-lobby/v2/lobby", event_types=("CREATE", "UPDATE"))
 async def handle_lobby_update(connection, event):
@@ -173,12 +174,12 @@ async def handle_lobby_update(connection, event):
             current_time = time.time()
             if current_time - last_switch_attempt < 2: return
             
-            update_gui_status("Moviendo a Espectador...")
+            update_gui_status("Moving to Spectator...")
             last_switch_attempt = current_time
             res = await connection.request("post", "/lol-lobby/v1/lobby/custom/switch-teams")
             if res.status in [200, 204]:
-                logger.info("Moviendo a Espectador Exitoso.")
-                update_gui_status("En Lobby (Espectador)")
+                logger.info("Move to Spectator Successful.")
+                update_gui_status("In Lobby (Spectator)")
 
 @connector.ws.register("/lol-gameflow/v1/gameflow-phase", event_types=("UPDATE",))
 async def gameflow_handler(connection, event):
@@ -194,27 +195,27 @@ async def gameflow_handler(connection, event):
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
 
     if phase in ["EndOfGame", "WaitingForStats"]:
-        logger.info("Juego terminado (o Remake/Abandono). Iniciando limpieza...")
+        logger.info("Game over (or Remake/Dodge). Starting cleanup...")
         await asyncio.sleep(5)
         await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
         await connection.request("post", "/lol-lobby/v2/lobby/quit")
         is_searching = True
         
         if BOT_CONFIG["invite_only"]:
-            update_gui_status("Esperando invitación...")
+            update_gui_status("Waiting for invitation...")
         else:
-            update_gui_status(f"Buscando '{BOT_CONFIG['lobby_name']}'...")
+            update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
 
     elif phase == "None":
         if not is_searching:
             is_searching = True
             if BOT_CONFIG["invite_only"]:
-                update_gui_status("Esperando invitación...")
+                update_gui_status("Waiting for invitation...")
             else:
-                update_gui_status(f"Buscando '{BOT_CONFIG['lobby_name']}'...")
+                update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
 
 
-# --- Control API para la GUI ---
+# --- Control API for GUI ---
 def start_bot(callback, config_data):
     global bot_active, is_searching, status_callback, connector_thread_started, BOT_CONFIG
     
@@ -225,9 +226,9 @@ def start_bot(callback, config_data):
     status_callback = callback
     
     if BOT_CONFIG["invite_only"]:
-        update_gui_status("Iniciando. Esperando invitaciones...")
+        update_gui_status("Starting. Waiting for invitations...")
     else:
-        update_gui_status(f"Iniciando. Buscando '{BOT_CONFIG['lobby_name']}'...")
+        update_gui_status(f"Starting. Searching '{BOT_CONFIG['lobby_name']}'...")
     
     if not connector_thread_started:
         connector_thread_started = True
@@ -237,4 +238,4 @@ def stop_bot():
     global bot_active, is_searching
     bot_active = False
     is_searching = False
-    update_gui_status("Bot Detenido.")
+    update_gui_status("Bot Stopped.")

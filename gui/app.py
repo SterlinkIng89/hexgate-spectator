@@ -5,12 +5,12 @@ import json
 import os
 from core.hexgate import start_bot, stop_bot
 
-# Configuración de usuario guardada en AppData
+# User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
 CONFIG_DIR = os.path.join(APPDATA, 'HexgateSpectator')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 
-# Crear carpeta si no existe
+# Create folder if it doesn't exist
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
 
@@ -27,7 +27,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Configuración de Ventana
+        # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
         self.geometry("650x700")
         self.resizable(False, False)
@@ -47,7 +47,7 @@ class App(ctk.CTk):
         self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=ctk.CTkFont(size=20, weight="bold"))
         self.title_label.pack(pady=(10, 5))
         
-        self.status_label = ctk.CTkLabel(self.top_frame, text="ESTADO: Detenido", font=ctk.CTkFont(size=14), text_color="gray")
+        self.status_label = ctk.CTkLabel(self.top_frame, text="STATUS: Stopped", font=ctk.CTkFont(size=14), text_color="gray")
         self.status_label.pack(pady=(0, 10))
         
         self.config_frame = ctk.CTkFrame(self)
@@ -56,22 +56,22 @@ class App(ctk.CTk):
         self.config_frame.columnconfigure(0, weight=1)
         self.config_frame.columnconfigure(1, weight=2)
         
-        ctk.CTkLabel(self.config_frame, text="Nombre de la sala:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="Ej: SCRIM_TEST")
+        ctk.CTkLabel(self.config_frame, text="Lobby Name:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: SCRIM_TEST")
         self.entry_lobby.grid(row=0, column=1, padx=10, pady=10, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Contraseñas (separadas por coma):").grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(self.config_frame, text="Passwords (comma separated):").grid(row=1, column=0, padx=10, pady=10, sticky="w")
         self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="123, test, scrim")
         self.entry_passwords.grid(row=1, column=1, padx=10, pady=10, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Retraso de Cámara (segundos):").grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(self.config_frame, text="Camera Delay (seconds):").grid(row=2, column=0, padx=10, pady=10, sticky="w")
         self.entry_delay = ctk.CTkEntry(self.config_frame)
         self.entry_delay.grid(row=2, column=1, padx=10, pady=10, sticky="we")
         
-        self.check_invite_only = ctk.CTkCheckBox(self.config_frame, text="Modo 'Solo esperar invitación' (No buscar sala)")
+        self.check_invite_only = ctk.CTkCheckBox(self.config_frame, text="Invite Only Mode (Don't search for lobby)")
         self.check_invite_only.grid(row=3, column=0, columnspan=2, padx=10, pady=15)
         
-        self.btn_toggle = ctk.CTkButton(self, text="INICIAR BOT", command=self.toggle_bot, fg_color="green", hover_color="darkgreen", height=40)
+        self.btn_toggle = ctk.CTkButton(self, text="START BOT", command=self.toggle_bot, fg_color="green", hover_color="darkgreen", height=40)
         self.btn_toggle.pack(pady=10, padx=20, fill="x")
         
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="black", text_color="#00FF00", font=("Consolas", 12))
@@ -79,11 +79,11 @@ class App(ctk.CTk):
         
         self.after(100, self.process_log_queue)
         
-        # Cargar configuración guardada (si existe)
+        # Load saved config (if exists)
         self.load_config()
 
     def load_config(self):
-        """Carga la configuración desde config.json e inicializa los campos."""
+        """Loads configuration from config.json and initializes fields."""
         default_config = {
             "lobby_name": "SCRIM_TEST",
             "passwords": "123",
@@ -97,7 +97,7 @@ class App(ctk.CTk):
                     saved_config = json.load(f)
                     default_config.update(saved_config)
             except Exception as e:
-                logging.error(f"Error al cargar configuración: {e}")
+                logging.error(f"Error loading configuration: {e}")
         
         self.entry_lobby.insert(0, default_config.get("lobby_name", ""))
         self.entry_passwords.insert(0, default_config.get("passwords", ""))
@@ -109,7 +109,7 @@ class App(ctk.CTk):
             self.check_invite_only.deselect()
 
     def save_config(self):
-        """Guarda la configuración actual en config.json."""
+        """Saves current configuration to config.json."""
         config_data = {
             "lobby_name": self.entry_lobby.get().strip(),
             "passwords": self.entry_passwords.get().strip(),
@@ -120,15 +120,26 @@ class App(ctk.CTk):
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config_data, f, indent=4)
         except Exception as e:
-            logging.error(f"Error al guardar configuración: {e}")
+            logging.error(f"Error saving configuration: {e}")
 
     def setup_logging(self):
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
         formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
+        
+        # GUI Handler
         gui_handler = TextboxHandler(self.log_queue)
         gui_handler.setFormatter(formatter)
         logger.addHandler(gui_handler)
+        
+        # File Handler (saves to AppData)
+        try:
+            log_file = os.path.join(CONFIG_DIR, 'hexgate.log')
+            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"Could not setup file logger: {e}")
 
     def process_log_queue(self):
         while not self.log_queue.empty():
@@ -140,11 +151,11 @@ class App(ctk.CTk):
         self.after(100, self.process_log_queue)
 
     def update_status(self, text):
-        self.after(0, lambda: self.status_label.configure(text=f"ESTADO: {text}", text_color="white"))
+        self.after(0, lambda: self.status_label.configure(text=f"STATUS: {text}", text_color="white"))
 
     def toggle_bot(self):
         if not self.is_running:
-            # Guardar preferencias al iniciar
+            # Save preferences on start
             self.save_config()
             
             passwords_raw = self.entry_passwords.get()
@@ -168,13 +179,13 @@ class App(ctk.CTk):
             self.check_invite_only.configure(state="disabled")
             
             self.is_running = True
-            self.btn_toggle.configure(text="DETENER BOT", fg_color="red", hover_color="darkred")
+            self.btn_toggle.configure(text="STOP BOT", fg_color="red", hover_color="darkred")
             self.status_label.configure(text_color="white")
             start_bot(self.update_status, config_data)
         else:
             self.is_running = False
-            self.btn_toggle.configure(text="INICIAR BOT", fg_color="green", hover_color="darkgreen")
-            self.status_label.configure(text="ESTADO: Detenido", text_color="gray")
+            self.btn_toggle.configure(text="START BOT", fg_color="green", hover_color="darkgreen")
+            self.status_label.configure(text="STATUS: Stopped", text_color="gray")
             
             self.entry_lobby.configure(state="normal")
             self.entry_passwords.configure(state="normal")

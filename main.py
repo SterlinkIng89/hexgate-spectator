@@ -1,18 +1,4 @@
-from lcu_driver import Connector
+from gui.app import run_app
 
-
-connector = Connector()
-
-
-@connector.ready
-async def connect(connection):
-    lobbies = await connection.request("get", "/lol-lobby/v1/custom-games")
-    print(await lobbies.json())
-
-
-@connector.close
-async def disconnect(connection):
-    print("Finished task")
-
-
-connector.start()
+if __name__ == "__main__":
+    run_app()

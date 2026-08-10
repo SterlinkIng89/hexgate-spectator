@@ -5,12 +5,12 @@ Tool created to automate the process of joining lobbies, managing remakes and ex
 ## What this project uses
 
 - Python
-- CustomTkinter (GUI)
-- lcu-driver (League client connection)
-- Requests (local game API / Live Client Data)
-- pydirectinput + pyautogui (camera and keyboard automation)
-- threading + asyncio (parallel tasks)
-- logging + config.json (logs and persistent settings)
+- CustomTkinter
+- lcu-driver
+- Requests
+- pydirectinput + pyautogui
+- threading + asyncio
+- logging + config.json
 
 ## Main features
 

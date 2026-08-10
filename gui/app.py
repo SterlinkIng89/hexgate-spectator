@@ -29,7 +29,7 @@ class App(ctk.CTk):
         
         # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
-        self.geometry("650x700")
+        self.geometry("680x750")
         self.resizable(False, False)
         
         ctk.set_appearance_mode("dark")
@@ -39,47 +39,55 @@ class App(ctk.CTk):
         self.log_queue = queue.Queue()
         self.setup_logging()
 
+        # Fonts
+        title_font = ctk.CTkFont(family="Roboto", size=24, weight="bold")
+        status_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
+        label_font = ctk.CTkFont(family="Roboto", size=13)
+        btn_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
+
         # --- UI Layout ---
         
-        self.top_frame = ctk.CTkFrame(self)
+        self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.top_frame.pack(pady=(20, 10), padx=20, fill="x")
         
-        self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=ctk.CTkFont(size=20, weight="bold"))
+        self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=title_font)
         self.title_label.pack(pady=(10, 5))
         
-        self.status_label = ctk.CTkLabel(self.top_frame, text="STATUS: Stopped", font=ctk.CTkFont(size=14), text_color="gray")
+        self.status_label = ctk.CTkLabel(self.top_frame, text="🔴 Status: Stopped", font=status_font, text_color="#e74c3c")
         self.status_label.pack(pady=(0, 10))
         
-        self.config_frame = ctk.CTkFrame(self)
-        self.config_frame.pack(pady=10, padx=20, fill="x")
+        self.config_frame = ctk.CTkFrame(self, border_width=1, border_color="#333333")
+        self.config_frame.pack(pady=10, padx=25, fill="x")
         
         self.config_frame.columnconfigure(0, weight=1)
-        self.config_frame.columnconfigure(1, weight=2)
+        self.config_frame.columnconfigure(1, weight=1)
+        self.config_frame.columnconfigure(2, weight=1)
+        self.config_frame.columnconfigure(3, weight=1)
         
-        ctk.CTkLabel(self.config_frame, text="Lobby Name:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: SCRIM_TEST")
-        self.entry_lobby.grid(row=0, column=1, padx=10, pady=10, sticky="we")
+        ctk.CTkLabel(self.config_frame, text="Lobby Name:", font=label_font).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: SCRIM_TEST", font=label_font, width=140)
+        self.entry_lobby.grid(row=0, column=1, padx=10, pady=5, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Passwords (comma separated):").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="123, test, scrim")
-        self.entry_passwords.grid(row=1, column=1, padx=10, pady=10, sticky="we")
+        ctk.CTkLabel(self.config_frame, text="Passwords:", font=label_font).grid(row=0, column=2, padx=10, pady=5, sticky="w")
+        self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="123, test", font=label_font, width=140)
+        self.entry_passwords.grid(row=0, column=3, padx=10, pady=5, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Camera Delay (seconds):").grid(row=2, column=0, padx=10, pady=10, sticky="w")
-        self.entry_delay = ctk.CTkEntry(self.config_frame)
-        self.entry_delay.grid(row=2, column=1, padx=10, pady=10, sticky="we")
+        ctk.CTkLabel(self.config_frame, text="Camera Delay (s):", font=label_font).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.entry_delay = ctk.CTkEntry(self.config_frame, font=label_font, width=140)
+        self.entry_delay.grid(row=1, column=1, padx=10, pady=5, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Ignored Words (comma separated):").grid(row=3, column=0, padx=10, pady=10, sticky="w")
-        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="Academy, AC, B")
-        self.entry_ignored.grid(row=3, column=1, padx=10, pady=10, sticky="we")
+        ctk.CTkLabel(self.config_frame, text="Ignored Words:", font=label_font).grid(row=1, column=2, padx=10, pady=5, sticky="w")
+        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="Academy, AC", font=label_font, width=140)
+        self.entry_ignored.grid(row=1, column=3, padx=10, pady=5, sticky="we")
         
-        self.check_invite_only = ctk.CTkCheckBox(self.config_frame, text="Invite Only Mode (Don't search for lobby)")
-        self.check_invite_only.grid(row=4, column=0, columnspan=2, padx=10, pady=15)
+        self.check_invite_only = ctk.CTkSwitch(self.config_frame, text="Invite Only Mode (Don't search)", font=label_font)
+        self.check_invite_only.grid(row=2, column=0, columnspan=4, padx=10, pady=10, sticky="w")
         
-        self.btn_toggle = ctk.CTkButton(self, text="START BOT", command=self.toggle_bot, fg_color="green", hover_color="darkgreen", height=40)
-        self.btn_toggle.pack(pady=10, padx=20, fill="x")
+        self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=40)
+        self.btn_toggle.pack(pady=10, padx=25, fill="x")
         
-        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="black", text_color="#00FF00", font=("Consolas", 12))
-        self.log_box.pack(pady=(10, 20), padx=20, fill="both", expand=True)
+        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
+        self.log_box.pack(pady=(10, 20), padx=25, fill="both", expand=True)
         
         self.after(100, self.process_log_queue)
         
@@ -158,7 +166,24 @@ class App(ctk.CTk):
         self.after(100, self.process_log_queue)
 
     def update_status(self, text):
-        self.after(0, lambda: self.status_label.configure(text=f"STATUS: {text}", text_color="white"))
+        text_lower = text.lower()
+        if "in progress" in text_lower or "searching" in text_lower or "waiting for invitation" in text_lower or "starting" in text_lower:
+            color = "#3498db" # Blue
+            icon = "🔵"
+        elif "switch" in text_lower or "mov" in text_lower or "waiting for lcu" in text_lower or "finding match" in text_lower:
+            color = "#f1c40f" # Yellow
+            icon = "🟡"
+        elif "stop" in text_lower or "end of game" in text_lower or "quit" in text_lower or "error" in text_lower:
+            color = "#e74c3c" # Red
+            icon = "🔴"
+        elif "lobby" in text_lower or "connected" in text_lower or "accepted" in text_lower:
+            color = "#2ecc71" # Green
+            icon = "🟢"
+        else:
+            color = "#ffffff"
+            icon = "⚪"
+            
+        self.after(0, lambda: self.status_label.configure(text=f"{icon} Status: {text}", text_color=color))
 
     def toggle_bot(self):
         if not self.is_running:
@@ -191,13 +216,12 @@ class App(ctk.CTk):
             self.check_invite_only.configure(state="disabled")
             
             self.is_running = True
-            self.btn_toggle.configure(text="STOP BOT", fg_color="red", hover_color="darkred")
-            self.status_label.configure(text_color="white")
+            self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")
             start_bot(self.update_status, config_data)
         else:
             self.is_running = False
-            self.btn_toggle.configure(text="START BOT", fg_color="green", hover_color="darkgreen")
-            self.status_label.configure(text="STATUS: Stopped", text_color="gray")
+            self.btn_toggle.configure(text="Start Bot", fg_color=["#3a7ebf", "#1f538d"], hover_color=["#325882", "#14375e"])
+            self.status_label.configure(text="🔴 Status: Stopped", text_color="#e74c3c")
             
             self.entry_lobby.configure(state="normal")
             self.entry_passwords.configure(state="normal")

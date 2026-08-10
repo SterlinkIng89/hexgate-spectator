@@ -28,5 +28,5 @@ Tool created to automate the process of joining lobbies, managing remakes and ex
 
 The application automatically saves user configuration and execution logs in the Windows AppData directory:
 
-- **Log file**: `%APPDATA%\HexgateSpectator\hexgate.log`
+- **Logs folder**: `%APPDATA%\HexgateSpectator\logs\`
 - **Config file**: `%APPDATA%\HexgateSpectator\config.json`

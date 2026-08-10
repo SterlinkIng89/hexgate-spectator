@@ -149,8 +149,15 @@ class App(ctk.CTk):
         
         # File Handler (saves to AppData)
         try:
-            log_file = os.path.join(CONFIG_DIR, 'hexgate.log')
-            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            logs_dir = os.path.join(CONFIG_DIR, 'logs')
+            if not os.path.exists(logs_dir):
+                os.makedirs(logs_dir)
+                
+            log_file = os.path.join(logs_dir, f'session_{timestamp}.log')
+            file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except Exception as e:

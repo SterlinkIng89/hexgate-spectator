@@ -1,0 +1,6 @@
+customtkinter
+lcu-driver
+requests
+urllib3
+pydirectinput
+pyautogui

@@ -107,14 +107,36 @@ async def search_and_join_loop(connection):
             logger.error(f"Error en el loop de búsqueda: {e}")
             await asyncio.sleep(5)
 
+class DummyEvent:
+    def __init__(self, data):
+        self.data = data
+
 @connector.ready
 async def connect(connection):
     logger.info("Conectado al cliente de League of Legends.")
     update_gui_status("Conectado a LCU")
+    
     summoner = await connection.request("get", "/lol-summoner/v1/current-summoner")
     if summoner.status == 200:
         data = await summoner.json()
         logger.info(f"Bienvenido, {data['displayName']}")
+        
+    # Sincronizar el estado actual en caso de que el bot se inicie a mitad de un proceso
+    logger.info("Sincronizando estado actual...")
+    phase_res = await connection.request("get", "/lol-gameflow/v1/gameflow-phase")
+    if phase_res.status == 200:
+        current_phase = await phase_res.json()
+        logger.info(f"Fase inicial detectada: {current_phase}")
+        
+        if current_phase != "None" and bot_active:
+            await gameflow_handler(connection, DummyEvent(current_phase))
+            
+        if current_phase in ["Lobby", "ChampSelect"] and bot_active:
+            lobby_res = await connection.request("get", "/lol-lobby/v2/lobby")
+            if lobby_res.status == 200:
+                lobby_data = await lobby_res.json()
+                await handle_lobby_update(connection, DummyEvent(lobby_data))
+                
     asyncio.create_task(search_and_join_loop(connection))
 
 @connector.close

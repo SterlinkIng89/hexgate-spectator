@@ -33,6 +33,7 @@ bot_active = False
 last_switch_attempt = 0
 status_callback = None
 connector_thread_started = False
+lcu_connection = None
 
 GAMEFLOW_PHASES = {
     "None": "Waiting...",
@@ -85,10 +86,18 @@ async def try_join_lobby_with_passwords(connection, game_id):
 
 async def search_and_join_loop(connection):
     global is_searching, bot_active
+    was_active = bot_active
     while True:
         try:
+            # Sync state if bot was just activated
+            if bot_active and not was_active:
+                logger.info("Bot activated, syncing state...")
+                await sync_state(connection)
+            was_active = bot_active
+
             # We only search if Invite Only mode is disabled
             if bot_active and is_searching and not BOT_CONFIG["invite_only"]:
+                logger.debug(f"Searching for lobby '{BOT_CONFIG['lobby_name']}'...")
                 res = await connection.request("get", "/lol-lobby/v1/custom-games")
                 if res.status == 200:
                     games = await res.json()
@@ -112,17 +121,7 @@ async def search_and_join_loop(connection):
             logger.error(f"Error in search loop: {e}")
             await asyncio.sleep(5)
 
-@connector.ready
-async def connect(connection):
-    logger.info("Connected to League of Legends client.")
-    update_gui_status("Connected to LCU")
-    
-    summoner = await connection.request("get", "/lol-summoner/v1/current-summoner")
-    if summoner.status == 200:
-        data = await summoner.json()
-        logger.info(f"Welcome, {data['displayName']}")
-        
-    # Sync current state in case the bot is started mid-process
+async def sync_state(connection):
     logger.info("Syncing current state...")
     phase_res = await connection.request("get", "/lol-gameflow/v1/gameflow-phase")
     if phase_res.status == 200:
@@ -137,11 +136,31 @@ async def connect(connection):
             if lobby_res.status == 200:
                 lobby_data = await lobby_res.json()
                 await handle_lobby_update(connection, DummyEvent(lobby_data))
-                
+        
+        # If phase is None, ensure GUI reflects that we are searching/waiting
+        if current_phase == "None" and bot_active:
+            await gameflow_handler(connection, DummyEvent("None"))
+
+@connector.ready
+async def connect(connection):
+    global lcu_connection
+    lcu_connection = connection
+    
+    logger.info("Connected to League of Legends client.")
+    update_gui_status("Connected to LCU")
+    
+    summoner = await connection.request("get", "/lol-summoner/v1/current-summoner")
+    if summoner.status == 200:
+        data = await summoner.json()
+        logger.info(f"Welcome, {data['displayName']}")
+        
+    await sync_state(connection)
     asyncio.create_task(search_and_join_loop(connection))
 
 @connector.close
 async def disconnect(_):
+    global lcu_connection
+    lcu_connection = None
     logger.info("Connection with the client closed. Waiting for restart...")
     update_gui_status("Waiting for LCU client...")
 
@@ -187,15 +206,27 @@ async def gameflow_handler(connection, event):
     if not bot_active: return
 
     phase = event.data
-    phase_name = GAMEFLOW_PHASES.get(phase, phase)
-    update_gui_status(phase_name)
+    
+    if phase != "None":
+        phase_name = GAMEFLOW_PHASES.get(phase, phase)
+        update_gui_status(phase_name)
 
     if phase == "InProgress":
+        is_searching = False
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
 
     if phase in ["EndOfGame", "WaitingForStats"]:
         logger.info("Game over (or Remake/Dodge). Starting cleanup...")
+        
+        # Forcefully close the game client if it's stuck on the Victory/Defeat screen
+        import subprocess
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
+            logger.info("Closed the game client process.")
+        except Exception as e:
+            logger.error(f"Failed to close game client: {e}")
+            
         await asyncio.sleep(5)
         await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
         await connection.request("post", "/lol-lobby/v2/lobby/quit")
@@ -207,12 +238,11 @@ async def gameflow_handler(connection, event):
             update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
 
     elif phase == "None":
-        if not is_searching:
-            is_searching = True
-            if BOT_CONFIG["invite_only"]:
-                update_gui_status("Waiting for invitation...")
-            else:
-                update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+        is_searching = True
+        if BOT_CONFIG["invite_only"]:
+            update_gui_status("Waiting for invitation...")
+        else:
+            update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
 
 
 # --- Control API for GUI ---

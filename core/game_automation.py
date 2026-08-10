@@ -55,10 +55,11 @@ def wait_for_game_and_setup_camera(delay=3.0):
         
         time.sleep(0.5)
         
+        import pyautogui
         logger.info("Zooming out (Scroll backward)...")
         # Scroll backward 3 times
         for _ in range(3):
-            pydirectinput.scroll(-1000)
+            pyautogui.scroll(-1000)
             time.sleep(0.2)
             
         logger.info("Camera setup completed.")

@@ -23,3 +23,10 @@ Tool created to automate the process of joining lobbies, managing remakes and ex
 - Automatic zoom adjustment for spectating.
 - Automatic loop of joining lobbies, remaking, exiting and searching again.
 - Visual interface with real-time status and logs.
+
+## Logs & Configuration
+
+The application automatically saves user configuration and execution logs in the Windows AppData directory:
+
+- **Log file**: `%APPDATA%\HexgateSpectator\hexgate.log`
+- **Config file**: `%APPDATA%\HexgateSpectator\config.json`

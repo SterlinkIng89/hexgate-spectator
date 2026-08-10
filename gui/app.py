@@ -5,7 +5,14 @@ import json
 import os
 from core.hexgate import start_bot, stop_bot
 
-CONFIG_FILE = "config.json"
+# Configuración de usuario guardada en AppData
+APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
+CONFIG_DIR = os.path.join(APPDATA, 'HexgateSpectator')
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
+
+# Crear carpeta si no existe
+if not os.path.exists(CONFIG_DIR):
+    os.makedirs(CONFIG_DIR)
 
 class TextboxHandler(logging.Handler):
     def __init__(self, log_queue):

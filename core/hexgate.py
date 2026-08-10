@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import threading
+import re
 
 # --- Workaround for lcu_driver in MainThread ---
 # lcu_driver requires an event loop to exist when instantiating Connector.
@@ -57,29 +58,39 @@ def update_gui_status(status_text):
         status_callback(status_text)
     logger.info(f"STATUS: {status_text}")
 
-async def try_join_lobby_with_passwords(connection, game_id):
+async def try_join_lobby_with_passwords(connection, game_id, best_game=None):
     """Attempts to join a lobby using the configured list of passwords."""
     passwords_to_try = BOT_CONFIG["passwords"]
     
+    party_id = best_game.get("partyId") if best_game else None
+
     if not passwords_to_try:
         # Attempt without password
-        logger.info("Attempting to join without password...")
+        logger.info(f"Attempting to join without password...")
+        # First try normal join
         res = await connection.request("post", f"/lol-lobby/v1/custom-games/{game_id}/join")
-        if res.status in [200, 204]:
-            return True
+        if res.status in [200, 204]: return True
+        
+        # If ID is 0, try joining by partyId just in case
+        if game_id == 0 and party_id:
+            logger.info(f"ID is 0. Trying to join via partyId: {party_id} without password")
+            res_party = await connection.request("post", f"/lol-lobby/v2/party/{party_id}/join")
+            if res_party.status in [200, 204]: return True
+            
         logger.warning(f"Error joining without password. Status: {res.status}")
         return False
         
     for pwd in passwords_to_try:
         logger.info(f"Attempting to join with password: '{pwd}'...")
-        payload = {"password": pwd}
-        res = await connection.request("post", f"/lol-lobby/v1/custom-games/{game_id}/join", data=payload)
         
-        if res.status in [200, 204]:
-            logger.info(f"Success! Correct password: '{pwd}'")
-            return True
-            
-        logger.warning(f"Failed with password '{pwd}'. Status: {res.status}")
+        if game_id == 0 and party_id:
+            # Party join with lobbyPassword (from Needlework schema)
+            res_party = await connection.request("post", f"/lol-lobby/v2/party/{party_id}/join", json={"lobbyPassword": pwd, "team": "spectator"})
+            if res_party.status in [200, 204]:
+                logger.info(f"Success joining via partyId! Correct password: '{pwd}'")
+                return True
+            logger.warning(f"Failed party join with password '{pwd}'. Status: {res_party.status}")
+
         await asyncio.sleep(1) # Small pause between attempts
         
     return False
@@ -107,6 +118,7 @@ async def search_and_join_loop(connection):
                     if res.status == 200:
                         games = await res.json()
                         target_name = BOT_CONFIG["lobby_name"]
+                        target_pattern = re.compile(r'\b' + re.escape(target_name) + r'\b', re.IGNORECASE)
                         
                         # Get current lobby state if we are in one
                         current_party_id = None
@@ -123,15 +135,19 @@ async def search_and_join_loop(connection):
                         best_count = current_count
                         
                         for g in games:
-                            if g.get("lobbyName") == target_name:
+                            lobby_name = g.get("lobbyName", "")
+                            if target_pattern.search(lobby_name):
                                 # Skip our own lobby to avoid leaving and rejoining
                                 if current_party_id and g.get("partyId") == current_party_id:
                                     continue
                                     
                                 total_slots = g.get("filledPlayerSlots", 0) + g.get("filledSpectatorSlots", 0)
                                 
-                                # If we find a lobby with MORE players than our current one
-                                if total_slots > best_count:
+                                # If we find a lobby with MORE players than our current one (or we are not in one)
+                                if current_phase == "None" and best_game is None:
+                                    best_game = g
+                                    best_count = total_slots
+                                elif total_slots > best_count:
                                     best_game = g
                                     best_count = total_slots
                                     
@@ -145,9 +161,11 @@ async def search_and_join_loop(connection):
                                 await asyncio.sleep(2) # Wait for client to process quit
                                 
                             else:
+                                # DEBUG: print the whole best_game object to see what ID field is available
+                                logger.info(f"Lobby raw data: {best_game}")
                                 logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
                                 
-                            success = await try_join_lobby_with_passwords(connection, game_id)
+                            success = await try_join_lobby_with_passwords(connection, game_id, best_game)
                             if success:
                                 update_gui_status("Joined Lobby")
                                 is_searching = False

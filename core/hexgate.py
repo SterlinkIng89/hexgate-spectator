@@ -151,19 +151,25 @@ async def search_and_join_loop(connection):
                                     best_game = g
                                     best_count = total_slots
                                     
-                        if best_game:
-                            game_id = best_game["id"]
-                            
-                            if current_phase == "Lobby":
-                                logger.info(f"Found better remake lobby '{target_name}' with {best_count} players (current has {current_count}). Switching...")
+                        if current_phase == "Lobby" and current_party_id:
+                            # Note: To compare the names we need to extract current_name
+                            current_name = current_lobby_data.get("gameConfig", {}).get("customLobbyName", "") if current_lobby_data else ""
+                            if best_game and best_game.get("lobbyName") != current_name and best_count > current_count:
+                                logger.info(f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching...")
                                 update_gui_status("Switching to better lobby...")
                                 await connection.request("post", "/lol-lobby/v2/lobby/quit")
                                 await asyncio.sleep(2) # Wait for client to process quit
-                                
                             else:
-                                # DEBUG: print the whole best_game object to see what ID field is available
-                                logger.info(f"Lobby raw data: {best_game}")
-                                logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
+                                if best_game:
+                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here.")
+                                else:
+                                    logger.info(f"Lobby check: Current lobby has {current_count} players. No other matching lobbies found.")
+                        elif best_game:
+                            game_id = best_game["id"]
+                            
+                            # DEBUG: print the whole best_game object to see what ID field is available
+                            logger.info(f"Lobby raw data: {best_game}")
+                            logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
                                 
                             success = await try_join_lobby_with_passwords(connection, game_id, best_game)
                             if success:
@@ -243,9 +249,6 @@ async def handle_lobby_update(connection, event):
     lobby_data = event.data
     if not lobby_data: return
 
-    if is_searching:
-        is_searching = False
-
     local_member = next((m for m in lobby_data.get("members", []) if m.get("isLocalMember")), None)
     if local_member:
         team_id = local_member.get("teamId")
@@ -271,8 +274,10 @@ async def gameflow_handler(connection, event):
         phase_name = GAMEFLOW_PHASES.get(phase, phase)
         update_gui_status(phase_name)
 
-    if phase == "InProgress":
+    if phase in ["ChampSelect", "InProgress"]:
         is_searching = False
+        
+    if phase == "InProgress":
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
 

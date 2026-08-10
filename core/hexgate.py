@@ -96,26 +96,68 @@ async def search_and_join_loop(connection):
             was_active = bot_active
 
             # We only search if Invite Only mode is disabled
-            if bot_active and is_searching and not BOT_CONFIG["invite_only"]:
-                logger.debug(f"Searching for lobby '{BOT_CONFIG['lobby_name']}'...")
-                res = await connection.request("get", "/lol-lobby/v1/custom-games")
-                if res.status == 200:
-                    games = await res.json()
-                    target_name = BOT_CONFIG["lobby_name"]
-                    target_game = next((g for g in games if g.get("lobbyName") == target_name), None)
-
-                    if target_game:
-                        game_id = target_game["id"]
-                        logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
+            if bot_active and not BOT_CONFIG["invite_only"]:
+                # Determine our current gameflow phase
+                phase_res = await connection.request("get", "/lol-gameflow/v1/gameflow-phase")
+                current_phase = await phase_res.json() if phase_res.status == 200 else "None"
+                
+                # We only want to search if we are in "None" (waiting) OR "Lobby" (to check for better remakes)
+                if current_phase in ["None", "Lobby"]:
+                    res = await connection.request("get", "/lol-lobby/v1/custom-games")
+                    if res.status == 200:
+                        games = await res.json()
+                        target_name = BOT_CONFIG["lobby_name"]
                         
-                        success = await try_join_lobby_with_passwords(connection, game_id)
-                        if success:
-                            update_gui_status("Joined Lobby")
-                            is_searching = False
+                        # Get current lobby state if we are in one
+                        current_party_id = None
+                        current_count = 0
+                        
+                        if current_phase == "Lobby":
+                            current_lobby_res = await connection.request("get", "/lol-lobby/v2/lobby")
+                            if current_lobby_res.status == 200:
+                                current_lobby_data = await current_lobby_res.json()
+                                current_party_id = current_lobby_data.get("partyId")
+                                current_count = len(current_lobby_data.get("members", []))
+                                
+                        best_game = None
+                        best_count = current_count
+                        
+                        for g in games:
+                            if g.get("lobbyName") == target_name:
+                                # Skip our own lobby to avoid leaving and rejoining
+                                if current_party_id and g.get("partyId") == current_party_id:
+                                    continue
+                                    
+                                total_slots = g.get("filledPlayerSlots", 0) + g.get("filledSpectatorSlots", 0)
+                                
+                                # If we find a lobby with MORE players than our current one
+                                if total_slots > best_count:
+                                    best_game = g
+                                    best_count = total_slots
+                                    
+                        if best_game:
+                            game_id = best_game["id"]
+                            
+                            if current_phase == "Lobby":
+                                logger.info(f"Found better remake lobby '{target_name}' with {best_count} players (current has {current_count}). Switching...")
+                                update_gui_status("Switching to better lobby...")
+                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
+                                await asyncio.sleep(2) # Wait for client to process quit
+                                
+                            else:
+                                logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
+                                
+                            success = await try_join_lobby_with_passwords(connection, game_id)
+                            if success:
+                                update_gui_status("Joined Lobby")
+                                is_searching = False
+                            else:
+                                logger.error("Could not enter the lobby with any of the passwords.")
+                                await asyncio.sleep(5)
                         else:
-                            logger.error("Could not enter the lobby with any of the passwords.")
-                            # Wait a bit longer before retrying if all passwords failed
-                            await asyncio.sleep(5)
+                            if current_phase == "None":
+                                logger.debug(f"Searching for lobby '{BOT_CONFIG['lobby_name']}'...")
+                                
             await asyncio.sleep(5)
         except Exception as e:
             logger.error(f"Error in search loop: {e}")

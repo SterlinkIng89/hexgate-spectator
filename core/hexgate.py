@@ -132,8 +132,21 @@ async def search_and_join_loop(connection):
                                 current_count = len(current_lobby_data.get("members", []))
                                 
                         valid_games = []
+                        ignored_words = BOT_CONFIG.get("ignored_words", [])
+                        
                         for g in games:
                             lobby_name = g.get("lobbyName", "")
+                            
+                            # Filter out lobbies containing ignored words
+                            should_ignore = False
+                            for word in ignored_words:
+                                if word.strip() and word.strip().lower() in lobby_name.lower():
+                                    should_ignore = True
+                                    break
+                                    
+                            if should_ignore:
+                                continue
+                                
                             if target_pattern.search(lobby_name):
                                 # Skip our own lobby to avoid leaving and rejoining
                                 if current_party_id and g.get("partyId") == current_party_id:
@@ -164,7 +177,7 @@ async def search_and_join_loop(connection):
                                 if best_game.get("lobbyName") != current_name and best_count > current_count:
                                     logger.info(f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching...")
                                     update_gui_status("Switching to better lobby...")
-                                    await connection.request("post", "/lol-lobby/v2/lobby/quit")
+                                    await connection.request("delete", "/lol-lobby/v2/lobby")
                                     await asyncio.sleep(2) # Wait for client to process quit
                                 else:
                                     logger.info(f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here.")
@@ -181,7 +194,6 @@ async def search_and_join_loop(connection):
                                     best_game = vg["game"]
                                     game_id = best_game.get("id", 0)
                                     
-                                    logger.info(f"Lobby raw data: {best_game}")
                                     logger.info(f"Lobby found: {best_game.get('lobbyName')} (ID: {game_id}). Attempting to join...")
                                         
                                     success = await try_join_lobby_with_passwords(connection, game_id, best_game)

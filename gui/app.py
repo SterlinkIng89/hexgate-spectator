@@ -68,8 +68,12 @@ class App(ctk.CTk):
         self.entry_delay = ctk.CTkEntry(self.config_frame)
         self.entry_delay.grid(row=2, column=1, padx=10, pady=10, sticky="we")
         
+        ctk.CTkLabel(self.config_frame, text="Ignored Words (comma separated):").grid(row=3, column=0, padx=10, pady=10, sticky="w")
+        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="Academy, AC, B")
+        self.entry_ignored.grid(row=3, column=1, padx=10, pady=10, sticky="we")
+        
         self.check_invite_only = ctk.CTkCheckBox(self.config_frame, text="Invite Only Mode (Don't search for lobby)")
-        self.check_invite_only.grid(row=3, column=0, columnspan=2, padx=10, pady=15)
+        self.check_invite_only.grid(row=4, column=0, columnspan=2, padx=10, pady=15)
         
         self.btn_toggle = ctk.CTkButton(self, text="START BOT", command=self.toggle_bot, fg_color="green", hover_color="darkgreen", height=40)
         self.btn_toggle.pack(pady=10, padx=20, fill="x")
@@ -88,6 +92,7 @@ class App(ctk.CTk):
             "lobby_name": "SCRIM_TEST",
             "passwords": "123",
             "camera_delay": "3",
+            "ignored_words": "",
             "invite_only": 0
         }
         
@@ -102,6 +107,7 @@ class App(ctk.CTk):
         self.entry_lobby.insert(0, default_config.get("lobby_name", ""))
         self.entry_passwords.insert(0, default_config.get("passwords", ""))
         self.entry_delay.insert(0, str(default_config.get("camera_delay", "3")))
+        self.entry_ignored.insert(0, default_config.get("ignored_words", ""))
         
         if default_config.get("invite_only", 0):
             self.check_invite_only.select()
@@ -114,6 +120,7 @@ class App(ctk.CTk):
             "lobby_name": self.entry_lobby.get().strip(),
             "passwords": self.entry_passwords.get().strip(),
             "camera_delay": self.entry_delay.get().strip(),
+            "ignored_words": self.entry_ignored.get().strip(),
             "invite_only": self.check_invite_only.get()
         }
         try:
@@ -161,6 +168,9 @@ class App(ctk.CTk):
             passwords_raw = self.entry_passwords.get()
             passwords = [p.strip() for p in passwords_raw.split(",")] if passwords_raw else []
             
+            ignored_raw = self.entry_ignored.get()
+            ignored = [w.strip() for w in ignored_raw.split(",")] if ignored_raw else []
+            
             try:
                 cam_delay = float(self.entry_delay.get())
             except ValueError:
@@ -170,12 +180,14 @@ class App(ctk.CTk):
                 "lobby_name": self.entry_lobby.get().strip(),
                 "passwords": passwords,
                 "camera_delay": cam_delay,
+                "ignored_words": ignored,
                 "invite_only": self.check_invite_only.get() == 1
             }
             
             self.entry_lobby.configure(state="disabled")
             self.entry_passwords.configure(state="disabled")
             self.entry_delay.configure(state="disabled")
+            self.entry_ignored.configure(state="disabled")
             self.check_invite_only.configure(state="disabled")
             
             self.is_running = True
@@ -190,6 +202,7 @@ class App(ctk.CTk):
             self.entry_lobby.configure(state="normal")
             self.entry_passwords.configure(state="normal")
             self.entry_delay.configure(state="normal")
+            self.entry_ignored.configure(state="normal")
             self.check_invite_only.configure(state="normal")
             
             stop_bot()

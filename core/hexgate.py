@@ -84,8 +84,8 @@ async def try_join_lobby_with_passwords(connection, game_id, best_game=None):
         logger.info(f"Attempting to join with password: '{pwd}'...")
         
         if game_id == 0 and party_id:
-            # Party join with lobbyPassword (from Needlework schema)
-            res_party = await connection.request("post", f"/lol-lobby/v2/party/{party_id}/join", json={"lobbyPassword": pwd, "team": "spectator"})
+            # Party join with lobbyPassword
+            res_party = await connection.request("post", f"/lol-lobby/v2/party/{party_id}/join", json={"lobbyPassword": pwd, "team": "SPECTATOR"})
             if res_party.status in [200, 204]:
                 logger.info(f"Success joining via partyId! Correct password: '{pwd}'")
                 return True
@@ -131,9 +131,7 @@ async def search_and_join_loop(connection):
                                 current_party_id = current_lobby_data.get("partyId")
                                 current_count = len(current_lobby_data.get("members", []))
                                 
-                        best_game = None
-                        best_count = current_count
-                        
+                        valid_games = []
                         for g in games:
                             lobby_name = g.get("lobbyName", "")
                             if target_pattern.search(lobby_name):
@@ -142,44 +140,63 @@ async def search_and_join_loop(connection):
                                     continue
                                     
                                 total_slots = g.get("filledPlayerSlots", 0) + g.get("filledSpectatorSlots", 0)
+                                valid_games.append({"game": g, "score": total_slots})
                                 
-                                # If we find a lobby with MORE players than our current one (or we are not in one)
-                                if current_phase == "None" and best_game is None:
-                                    best_game = g
-                                    best_count = total_slots
-                                elif total_slots > best_count:
-                                    best_game = g
-                                    best_count = total_slots
-                                    
                         if current_phase == "Lobby" and current_party_id:
-                            # Note: To compare the names we need to extract current_name
-                            current_name = current_lobby_data.get("gameConfig", {}).get("customLobbyName", "") if current_lobby_data else ""
-                            if best_game and best_game.get("lobbyName") != current_name and best_count > current_count:
-                                logger.info(f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching...")
-                                update_gui_status("Switching to better lobby...")
-                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
-                                await asyncio.sleep(2) # Wait for client to process quit
-                            else:
-                                if best_game:
-                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here.")
+                            # Periodic spectator check
+                            local_member = current_lobby_data.get("localMember")
+                            if local_member and not local_member.get("isSpectator"):
+                                logger.info("Lobby check: Bot is currently in a player slot. Attempting to move to spectators...")
+                                res = await connection.request("post", "/lol-lobby/v2/lobby/team/SPECTATOR")
+                                if res.status in [200, 204]:
+                                    logger.info("Move to Spectator Successful.")
+                                    update_gui_status("In Lobby (Spectator)")
                                 else:
-                                    logger.info(f"Lobby check: Current lobby has {current_count} players. No other matching lobbies found.")
-                        elif best_game:
-                            game_id = best_game["id"]
+                                    logger.warning(f"Failed to move to Spectator. Status: {res.status}. Will retry next check.")
                             
-                            # DEBUG: print the whole best_game object to see what ID field is available
-                            logger.info(f"Lobby raw data: {best_game}")
-                            logger.info(f"Lobby found: {target_name} (ID: {game_id}). Attempting to join...")
+                            if valid_games:
+                                valid_games.sort(key=lambda x: x["score"], reverse=True)
+                                best_game = valid_games[0]["game"]
+                                best_count = valid_games[0]["score"]
                                 
-                            success = await try_join_lobby_with_passwords(connection, game_id, best_game)
-                            if success:
-                                update_gui_status("Joined Lobby")
-                                is_searching = False
+                                # Note: To compare the names we need to extract current_name
+                                current_name = current_lobby_data.get("gameConfig", {}).get("customLobbyName", "") if current_lobby_data else ""
+                                if best_game.get("lobbyName") != current_name and best_count > current_count:
+                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching...")
+                                    update_gui_status("Switching to better lobby...")
+                                    await connection.request("post", "/lol-lobby/v2/lobby/quit")
+                                    await asyncio.sleep(2) # Wait for client to process quit
+                                else:
+                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here.")
                             else:
-                                logger.error("Could not enter the lobby with any of the passwords.")
-                                await asyncio.sleep(5)
-                        else:
-                            if current_phase == "None":
+                                logger.info(f"Lobby check: Current lobby has {current_count} players. No other matching lobbies found.")
+                                
+                        elif current_phase == "None":
+                            if valid_games:
+                                # Sort by score (players) descending
+                                valid_games.sort(key=lambda x: x["score"], reverse=True)
+                                joined = False
+                                
+                                for vg in valid_games:
+                                    best_game = vg["game"]
+                                    game_id = best_game.get("id", 0)
+                                    
+                                    logger.info(f"Lobby raw data: {best_game}")
+                                    logger.info(f"Lobby found: {best_game.get('lobbyName')} (ID: {game_id}). Attempting to join...")
+                                        
+                                    success = await try_join_lobby_with_passwords(connection, game_id, best_game)
+                                    if success:
+                                        update_gui_status("Joined Lobby")
+                                        is_searching = False
+                                        joined = True
+                                        break
+                                    else:
+                                        logger.warning(f"Could not enter lobby '{best_game.get('lobbyName')}' with any of the passwords. Trying next matching lobby if available...")
+                                
+                                if not joined:
+                                    logger.error("Could not enter ANY of the matching lobbies.")
+                                    await asyncio.sleep(5)
+                            else:
                                 logger.debug(f"Searching for lobby '{BOT_CONFIG['lobby_name']}'...")
                                 
             await asyncio.sleep(5)
@@ -249,19 +266,21 @@ async def handle_lobby_update(connection, event):
     lobby_data = event.data
     if not lobby_data: return
 
-    local_member = next((m for m in lobby_data.get("members", []) if m.get("isLocalMember")), None)
+    local_member = lobby_data.get("localMember")
     if local_member:
-        team_id = local_member.get("teamId")
-        if team_id in [TEAM_ORDER, TEAM_CHAOS]:
+        # If we accidentally joined a player slot, force switch to Spectator
+        if not local_member.get("isSpectator"):
             current_time = time.time()
             if current_time - last_switch_attempt < 2: return
             
             update_gui_status("Moving to Spectator...")
             last_switch_attempt = current_time
-            res = await connection.request("post", "/lol-lobby/v1/lobby/custom/switch-teams")
+            res = await connection.request("post", "/lol-lobby/v2/lobby/team/SPECTATOR")
             if res.status in [200, 204]:
                 logger.info("Move to Spectator Successful.")
                 update_gui_status("In Lobby (Spectator)")
+            else:
+                logger.warning(f"Failed to move to Spectator. Status: {res.status}")
 
 @connector.ws.register("/lol-gameflow/v1/gameflow-phase", event_types=("UPDATE",))
 async def gameflow_handler(connection, event):

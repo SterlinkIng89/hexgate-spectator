@@ -76,7 +76,7 @@ class App(ctk.CTk):
         self.entry_lobby.grid(row=0, column=1, padx=10, pady=5, sticky="we")
         
         ctk.CTkLabel(self.config_frame, text="Passwords:", font=label_font).grid(row=0, column=2, padx=10, pady=5, sticky="w")
-        self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="123, test", font=label_font, width=140)
+        self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: 123, test", font=label_font, width=140)
         self.entry_passwords.grid(row=0, column=3, padx=10, pady=5, sticky="we")
         
         ctk.CTkLabel(self.config_frame, text="Camera Delay (s):", font=label_font).grid(row=1, column=0, padx=10, pady=5, sticky="w")
@@ -84,7 +84,7 @@ class App(ctk.CTk):
         self.entry_delay.grid(row=1, column=1, padx=10, pady=5, sticky="we")
         
         ctk.CTkLabel(self.config_frame, text="Ignored Words:", font=label_font).grid(row=1, column=2, padx=10, pady=5, sticky="w")
-        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="Academy, AC", font=label_font, width=140)
+        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: Academy, AC", font=label_font, width=140)
         self.entry_ignored.grid(row=1, column=3, padx=10, pady=5, sticky="we")
         
         self.check_invite_only = ctk.CTkSwitch(self.config_frame, text="Invite Only Mode (Don't search)", font=label_font)
@@ -119,10 +119,19 @@ class App(ctk.CTk):
             except Exception as e:
                 logging.error(f"Error loading configuration: {e}")
         
-        self.entry_lobby.insert(0, default_config.get("lobby_name", ""))
-        self.entry_passwords.insert(0, default_config.get("passwords", ""))
+        lobby_val = default_config.get("lobby_name", "")
+        if lobby_val:
+            self.entry_lobby.insert(0, lobby_val)
+            
+        pass_val = default_config.get("passwords", "")
+        if pass_val:
+            self.entry_passwords.insert(0, pass_val)
+            
         self.entry_delay.insert(0, str(default_config.get("camera_delay", "3")))
-        self.entry_ignored.insert(0, default_config.get("ignored_words", ""))
+        
+        ignored_val = default_config.get("ignored_words", "")
+        if ignored_val:
+            self.entry_ignored.insert(0, ignored_val)
         
         if default_config.get("invite_only", 0):
             self.check_invite_only.select()

@@ -49,6 +49,17 @@ GAMEFLOW_PHASES = {
     "Reconnect": "Reconnecting",
 }
 
+def build_lobby_pattern(name):
+    """Build a regex that tolerates inconsistent spacing in lobby names.
+    e.g. 'EST' matches 'EST', 'E ST', 'ES T', 'E S T', etc."""
+    chars = list(name.strip())
+    # Escape each char individually; turn spaces into \s+ (must have at least one space)
+    parts = [re.escape(c) if c != ' ' else r'\s+' for c in chars]
+    # Allow optional whitespace between every character
+    flexible = r'\s*'.join(parts)
+    # Use lookarounds instead of \b to handle punctuation correctly
+    return re.compile(r'(?<!\w)' + flexible + r'(?!\w)', re.IGNORECASE)
+
 class DummyEvent:
     def __init__(self, data):
         self.data = data
@@ -123,7 +134,7 @@ async def search_and_join_loop(connection):
                     if res.status == 200:
                         games = await res.json()
                         target_names = [name.strip() for name in BOT_CONFIG["lobby_name"].split(",") if name.strip()]
-                        target_patterns = [re.compile(r'\b' + re.escape(tn) + r'\b', re.IGNORECASE) for tn in target_names]
+                        target_patterns = [build_lobby_pattern(tn) for tn in target_names]
                         
                         # Get current lobby state if we are in one
                         current_party_id = None

@@ -122,8 +122,8 @@ async def search_and_join_loop(connection):
                     res = await connection.request("get", "/lol-lobby/v1/custom-games")
                     if res.status == 200:
                         games = await res.json()
-                        target_name = BOT_CONFIG["lobby_name"]
-                        target_pattern = re.compile(r'\b' + re.escape(target_name) + r'\b', re.IGNORECASE)
+                        target_names = [name.strip() for name in BOT_CONFIG["lobby_name"].split(",") if name.strip()]
+                        target_patterns = [re.compile(r'\b' + re.escape(tn) + r'\b', re.IGNORECASE) for tn in target_names]
                         
                         # Get current lobby state if we are in one
                         current_party_id = None
@@ -152,7 +152,7 @@ async def search_and_join_loop(connection):
                             if should_ignore:
                                 continue
                                 
-                            if target_pattern.search(lobby_name):
+                            if any(p.search(lobby_name) for p in target_patterns):
                                 # Skip our own lobby to avoid leaving and rejoining
                                 if current_party_id and g.get("partyId") == current_party_id:
                                     continue

@@ -71,8 +71,8 @@ class App(ctk.CTk):
         self.config_frame.columnconfigure(2, weight=1)
         self.config_frame.columnconfigure(3, weight=1)
         
-        ctk.CTkLabel(self.config_frame, text="Lobby Name:", font=label_font).grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: SCRIM_TEST", font=label_font, width=140)
+        ctk.CTkLabel(self.config_frame, text="Lobby Name(s):", font=label_font).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: est, vks", font=label_font, width=140)
         self.entry_lobby.grid(row=0, column=1, padx=10, pady=5, sticky="we")
         
         ctk.CTkLabel(self.config_frame, text="Passwords:", font=label_font).grid(row=0, column=2, padx=10, pady=5, sticky="w")

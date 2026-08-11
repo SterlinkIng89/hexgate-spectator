@@ -114,6 +114,11 @@ async def search_and_join_loop(connection):
                 
                 # We only want to search if we are in "None" (waiting) OR "Lobby" (to check for better remakes)
                 if current_phase in ["None", "Lobby"]:
+                    # Force the LCU to refresh its cached custom-games list so we
+                    # can detect newly-created lobbies without the user manually
+                    # hitting refresh in the client UI.
+                    await connection.request("post", "/lol-lobby/v1/custom-games/refresh")
+                    await asyncio.sleep(0.5)  # Short wait for the client to populate the refreshed list
                     res = await connection.request("get", "/lol-lobby/v1/custom-games")
                     if res.status == 200:
                         games = await res.json()

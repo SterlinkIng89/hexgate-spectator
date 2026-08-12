@@ -76,4 +76,6 @@ test_*.py
 fetch_docs.py
 lcu_help.json
 config.json
+BUILD_INSTRUCTIONS.md
+
 

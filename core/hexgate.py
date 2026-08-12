@@ -42,6 +42,12 @@ _game_time_last_changed_at = 0.0
 GAME_FREEZE_TIMEOUT = 300  # 5 minutes: fallback only, primary detection is via Reconnect phase
 _was_in_progress = False  # Tracks if we were spectating a live game
 
+# Verbose Logging state variables
+_previous_phase = "None"
+_last_game_time_log_at = 0.0
+_frozen_warnings_issued = set()
+_players_logged_for_current_game = False
+
 GAMEFLOW_PHASES = {
     "None": "Waiting...",
     "Lobby": "In Lobby",
@@ -87,6 +93,22 @@ async def get_current_game_time():
             res = requests.get("https://127.0.0.1:2999/liveclientdata/gamestats", verify=False, timeout=2)
             if res.status_code == 200:
                 return res.json().get("gameTime", None)
+        except Exception:
+            pass
+        return None
+    return await loop.run_in_executor(None, _fetch)
+
+async def get_current_all_players():
+    """Fetches the allplayers list from the Live Client Data API."""
+    import requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    loop = asyncio.get_event_loop()
+    def _fetch():
+        try:
+            res = requests.get("https://127.0.0.1:2999/liveclientdata/allplayers", verify=False, timeout=2)
+            if res.status_code == 200:
+                return res.json()
         except Exception:
             pass
         return None
@@ -152,30 +174,58 @@ async def search_and_join_loop(connection):
                 # stays alive but the clock freezes indefinitely.
                 if current_phase == "InProgress":
                     global _game_time_last_value, _game_time_last_changed_at
+                    global _last_game_time_log_at, _frozen_warnings_issued, _players_logged_for_current_game
                     game_time = await get_current_game_time()
                     now = time.time()
 
                     if game_time is not None:
+                        if not _players_logged_for_current_game and game_time > 1.0:
+                            players = await get_current_all_players()
+                            if players:
+                                names = [f"{p.get('summonerName', 'Unknown')} ({p.get('championName', 'Unknown')})" for p in players]
+                                logger.info(f"[SPECTATE] Connected players ({len(names)}): {', '.join(names)}")
+                            _players_logged_for_current_game = True
+
                         if game_time != _game_time_last_value:
                             # Clock is still moving — update tracking variables
                             _game_time_last_value = game_time
                             _game_time_last_changed_at = now
+                            _frozen_warnings_issued.clear()
+                            
+                            # Periodic logging every 30s
+                            if now - _last_game_time_log_at >= 30:
+                                logger.info(f"[SPECTATE] Game running. Current gameTime: {game_time:.1f}s")
+                                _last_game_time_log_at = now
                         else:
                             # Clock has not moved since last check
                             frozen_for = now - _game_time_last_changed_at
+                            
+                            if frozen_for >= 15 and 15 not in _frozen_warnings_issued:
+                                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for 15s...")
+                                _frozen_warnings_issued.add(15)
+                            elif frozen_for >= 45 and 45 not in _frozen_warnings_issued:
+                                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for 45s...")
+                                _frozen_warnings_issued.add(45)
+                            elif frozen_for >= 90 and 90 not in _frozen_warnings_issued:
+                                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for 90s...")
+                                _frozen_warnings_issued.add(90)
+
                             if _game_time_last_changed_at > 0 and frozen_for >= GAME_FREEZE_TIMEOUT:
-                                logger.warning(f"Game time frozen for {frozen_for:.0f}s. Assuming all players left. Forcing cleanup...")
+                                logger.warning(f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. Assuming all players left. Forcing cleanup...")
                                 update_gui_status("Game abandoned — cleaning up...")
                                 # Reset tracking
                                 _game_time_last_value = 0.0
                                 _game_time_last_changed_at = 0.0
+                                _last_game_time_log_at = 0.0
+                                _frozen_warnings_issued.clear()
+                                _players_logged_for_current_game = False
                                 # Run the same cleanup as EndOfGame
                                 import subprocess
                                 try:
-                                    subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
-                                    logger.info("Closed frozen game client process.")
+                                    res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
+                                    logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
                                 except Exception as e:
-                                    logger.error(f"Failed to close game client: {e}")
+                                    logger.error(f"[PROCESS] Failed to close game client: {e}")
                                 await asyncio.sleep(5)
                                 await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
                                 await connection.request("post", "/lol-lobby/v2/lobby/quit")
@@ -390,11 +440,15 @@ async def handle_lobby_update(connection, event):
 
 @connector.ws.register("/lol-gameflow/v1/gameflow-phase", event_types=("UPDATE",))
 async def gameflow_handler(connection, event):
-    global is_searching, bot_active
+    global is_searching, bot_active, _previous_phase
     if not bot_active: return
 
     phase = event.data
     
+    if phase != _previous_phase:
+        logger.info(f"[GAMEFLOW] Phase changed: {_previous_phase} -> {phase}")
+        _previous_phase = phase
+
     if phase != "None":
         phase_name = GAMEFLOW_PHASES.get(phase, phase)
         update_gui_status(phase_name)
@@ -404,11 +458,15 @@ async def gameflow_handler(connection, event):
         
     if phase == "InProgress":
         global _game_time_last_value, _game_time_last_changed_at, _was_in_progress
+        global _last_game_time_log_at, _frozen_warnings_issued, _players_logged_for_current_game
         # Mark that we are now spectating a live game
         _was_in_progress = True
         # Reset freeze tracking for this new game
         _game_time_last_value = 0.0
         _game_time_last_changed_at = 0.0
+        _last_game_time_log_at = 0.0
+        _frozen_warnings_issued.clear()
+        _players_logged_for_current_game = False
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
 
@@ -422,12 +480,15 @@ async def gameflow_handler(connection, event):
         _was_in_progress = False
         _game_time_last_value = 0.0
         _game_time_last_changed_at = 0.0
+        _last_game_time_log_at = 0.0
+        _frozen_warnings_issued.clear()
+        _players_logged_for_current_game = False
         import subprocess
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
-            logger.info("Closed game client process after abandonment.")
+            res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
+            logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
         except Exception as e:
-            logger.error(f"Failed to close game client: {e}")
+            logger.error(f"[PROCESS] Failed to close game client: {e}")
         await asyncio.sleep(3)
         await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
         await connection.request("post", "/lol-lobby/v2/lobby/quit")
@@ -439,15 +500,15 @@ async def gameflow_handler(connection, event):
         return
 
     if phase in ["EndOfGame", "WaitingForStats"]:
-        logger.info("Game over (or Remake/Dodge). Starting cleanup...")
+        logger.info(f"[GAMEFLOW] Game over (or Remake/Dodge). Phase is {phase}. Starting cleanup...")
         
         # Forcefully close the game client if it's stuck on the Victory/Defeat screen
         import subprocess
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
-            logger.info("Closed the game client process.")
+            res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
+            logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
         except Exception as e:
-            logger.error(f"Failed to close game client: {e}")
+            logger.error(f"[PROCESS] Failed to close game client: {e}")
             
         await asyncio.sleep(5)
         await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")

@@ -36,6 +36,12 @@ status_callback = None
 connector_thread_started = False
 lcu_connection = None
 
+# Frozen game detection
+_game_time_last_value = 0.0
+_game_time_last_changed_at = 0.0
+GAME_FREEZE_TIMEOUT = 300  # 5 minutes: fallback only, primary detection is via Reconnect phase
+_was_in_progress = False  # Tracks if we were spectating a live game
+
 GAMEFLOW_PHASES = {
     "None": "Waiting...",
     "Lobby": "In Lobby",
@@ -68,6 +74,23 @@ def update_gui_status(status_text):
     if status_callback:
         status_callback(status_text)
     logger.info(f"STATUS: {status_text}")
+
+async def get_current_game_time():
+    """Fetches the current game time from the Live Client Data API (port 2999).
+    Returns the game time in seconds, or None if the game process is unreachable."""
+    import requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    loop = asyncio.get_event_loop()
+    def _fetch():
+        try:
+            res = requests.get("https://127.0.0.1:2999/liveclientdata/gamestats", verify=False, timeout=2)
+            if res.status_code == 200:
+                return res.json().get("gameTime", None)
+        except Exception:
+            pass
+        return None
+    return await loop.run_in_executor(None, _fetch)
 
 async def try_join_lobby_with_passwords(connection, game_id, best_game=None):
     """Attempts to join a lobby using the configured list of passwords."""
@@ -123,6 +146,61 @@ async def search_and_join_loop(connection):
                 phase_res = await connection.request("get", "/lol-gameflow/v1/gameflow-phase")
                 current_phase = await phase_res.json() if phase_res.status == 200 else "None"
                 
+                # --- Frozen game detection ---
+                # When InProgress, check if the game time has stopped advancing.
+                # This happens when all players leave a custom game: the process
+                # stays alive but the clock freezes indefinitely.
+                if current_phase == "InProgress":
+                    global _game_time_last_value, _game_time_last_changed_at
+                    game_time = await get_current_game_time()
+                    now = time.time()
+
+                    if game_time is not None:
+                        if game_time != _game_time_last_value:
+                            # Clock is still moving — update tracking variables
+                            _game_time_last_value = game_time
+                            _game_time_last_changed_at = now
+                        else:
+                            # Clock has not moved since last check
+                            frozen_for = now - _game_time_last_changed_at
+                            if _game_time_last_changed_at > 0 and frozen_for >= GAME_FREEZE_TIMEOUT:
+                                logger.warning(f"Game time frozen for {frozen_for:.0f}s. Assuming all players left. Forcing cleanup...")
+                                update_gui_status("Game abandoned — cleaning up...")
+                                # Reset tracking
+                                _game_time_last_value = 0.0
+                                _game_time_last_changed_at = 0.0
+                                # Run the same cleanup as EndOfGame
+                                import subprocess
+                                try:
+                                    subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
+                                    logger.info("Closed frozen game client process.")
+                                except Exception as e:
+                                    logger.error(f"Failed to close game client: {e}")
+                                await asyncio.sleep(5)
+                                await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
+                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
+                                is_searching = True
+                                if BOT_CONFIG["invite_only"]:
+                                    update_gui_status("Waiting for invitation...")
+                                else:
+                                    update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+                    else:
+                        # API unreachable — game process probably already died
+                        if _game_time_last_changed_at > 0:
+                            frozen_for = time.time() - _game_time_last_changed_at
+                            if frozen_for >= GAME_FREEZE_TIMEOUT:
+                                logger.warning("Game API unreachable for too long. Forcing cleanup...")
+                                _game_time_last_value = 0.0
+                                _game_time_last_changed_at = 0.0
+                                await asyncio.sleep(5)
+                                await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
+                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
+                                is_searching = True
+                                if BOT_CONFIG["invite_only"]:
+                                    update_gui_status("Waiting for invitation...")
+                                else:
+                                    update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+
                 # We only want to search if we are in "None" (waiting) OR "Lobby" (to check for better remakes)
                 if current_phase in ["None", "Lobby"]:
                     # Force the LCU to refresh its cached custom-games list so we
@@ -325,8 +403,40 @@ async def gameflow_handler(connection, event):
         is_searching = False
         
     if phase == "InProgress":
+        global _game_time_last_value, _game_time_last_changed_at, _was_in_progress
+        # Mark that we are now spectating a live game
+        _was_in_progress = True
+        # Reset freeze tracking for this new game
+        _game_time_last_value = 0.0
+        _game_time_last_changed_at = 0.0
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
+
+    if phase == "Reconnect" and _was_in_progress:
+        # The LCU emits "Reconnect" when the game server closes the session.
+        # In a custom game, this happens when all players leave (remake/abandonment).
+        # A normal in-game pause keeps the phase at "InProgress", so this is a
+        # reliable signal that the game ended unexpectedly.
+        logger.info("Reconnect phase detected after InProgress. All players likely left. Cleaning up...")
+        update_gui_status("Game abandoned (Reconnect) — cleaning up...")
+        _was_in_progress = False
+        _game_time_last_value = 0.0
+        _game_time_last_changed_at = 0.0
+        import subprocess
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True)
+            logger.info("Closed game client process after abandonment.")
+        except Exception as e:
+            logger.error(f"Failed to close game client: {e}")
+        await asyncio.sleep(3)
+        await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
+        await connection.request("post", "/lol-lobby/v2/lobby/quit")
+        is_searching = True
+        if BOT_CONFIG["invite_only"]:
+            update_gui_status("Waiting for invitation...")
+        else:
+            update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+        return
 
     if phase in ["EndOfGame", "WaitingForStats"]:
         logger.info("Game over (or Remake/Dodge). Starting cleanup...")

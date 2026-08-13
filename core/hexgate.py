@@ -151,8 +151,10 @@ async def try_join_lobby_with_passwords(connection, game_id, best_game=None):
         
     return False
 
+_last_lobby_check_msg = ""
+
 async def search_and_join_loop(connection):
-    global is_searching, bot_active
+    global is_searching, bot_active, _last_lobby_check_msg
     was_active = bot_active
     while True:
         try:
@@ -319,14 +321,22 @@ async def search_and_join_loop(connection):
                                 # Note: To compare the names we need to extract current_name
                                 current_name = current_lobby_data.get("gameConfig", {}).get("customLobbyName", "") if current_lobby_data else ""
                                 if best_game.get("lobbyName") != current_name and best_count > current_count:
-                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching...")
+                                    msg = f"Lobby check: Current lobby has {current_count} players. Found better remake lobby '{best_game['lobbyName']}' with {best_count} players. Switching..."
+                                    logger.info(msg)
+                                    _last_lobby_check_msg = msg
                                     update_gui_status("Switching to better lobby...")
                                     await connection.request("delete", "/lol-lobby/v2/lobby")
                                     await asyncio.sleep(2) # Wait for client to process quit
                                 else:
-                                    logger.info(f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here.")
+                                    msg = f"Lobby check: Current lobby has {current_count} players. Best other lobby '{best_game['lobbyName']}' has {best_count} players. Staying here."
+                                    if msg != _last_lobby_check_msg:
+                                        logger.info(msg)
+                                        _last_lobby_check_msg = msg
                             else:
-                                logger.info(f"Lobby check: Current lobby has {current_count} players. No other matching lobbies found.")
+                                msg = f"Lobby check: Current lobby has {current_count} players. No other matching lobbies found."
+                                if msg != _last_lobby_check_msg:
+                                    logger.info(msg)
+                                    _last_lobby_check_msg = msg
                                 
                         elif current_phase == "None":
                             if valid_games:

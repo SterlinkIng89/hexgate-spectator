@@ -12,7 +12,7 @@ class OBSController:
     """
     def __init__(self):
         self._client = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.host = "localhost"
         self.port = 4455
         self.password = ""

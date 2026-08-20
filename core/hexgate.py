@@ -425,7 +425,8 @@ async def gameflow_handler(connection, event):
 
     phase = event.data
     
-    if phase != _previous_phase:
+    phase_changed = (phase != _previous_phase)
+    if phase_changed:
         logger.info(f"[GAMEFLOW] Phase changed: {_previous_phase} -> {phase}")
         _previous_phase = phase
 
@@ -436,7 +437,7 @@ async def gameflow_handler(connection, event):
     if phase in ["ChampSelect", "InProgress"]:
         is_searching = False
         
-    if phase == "InProgress":
+    if phase == "InProgress" and phase_changed:
         global _game_time_last_value, _game_time_last_changed_at, _was_in_progress
         global _last_game_time_log_at, _frozen_warnings_issued, _players_logged_for_current_game
         # Mark that we are now spectating a live game
@@ -452,7 +453,7 @@ async def gameflow_handler(connection, event):
         from core.obs_controller import obs_controller
         obs_controller.on_game_start()
 
-    if phase == "Reconnect" and _was_in_progress:
+    if phase == "Reconnect" and phase_changed and _was_in_progress:
         # The LCU emits "Reconnect" when the game server closes the session.
         # In a custom game, this happens when all players leave (remake/abandonment).
         # A normal in-game pause keeps the phase at "InProgress", so this is a
@@ -461,11 +462,11 @@ async def gameflow_handler(connection, event):
         await _cleanup_game_process(connection, "Game abandoned (Reconnect)")
         return
 
-    if phase in ["EndOfGame", "WaitingForStats"]:
+    if phase in ["EndOfGame", "WaitingForStats"] and phase_changed:
         logger.info(f"[GAMEFLOW] Game over (or Remake/Dodge). Phase is {phase}. Starting cleanup...")
         await _cleanup_game_process(connection, f"Game ended ({phase})")
 
-    elif phase == "None":
+    elif phase == "None" and phase_changed:
         is_searching = True
         if BOT_CONFIG["invite_only"]:
             update_gui_status("Waiting for invitation...")

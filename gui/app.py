@@ -76,8 +76,14 @@ class App(ctk.CTk):
         self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=title_font)
         self.title_label.pack(pady=(5, 2))
         
-        self.status_label = ctk.CTkLabel(self.top_frame, text="🔴 Status: Stopped", font=status_font, text_color="#e74c3c")
-        self.status_label.pack(pady=(0, 5))
+        self.status_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent")
+        self.status_frame.pack(pady=(0, 5))
+        
+        self.status_dot = ctk.CTkLabel(self.status_frame, text="●", font=ctk.CTkFont(family="Roboto", size=14, weight="bold"), text_color="#e74c3c")
+        self.status_dot.pack(side="left", padx=(0, 6), pady=(0, 2))
+        
+        self.status_label = ctk.CTkLabel(self.status_frame, text="Status: Stopped", font=status_font, text_color="#e74c3c")
+        self.status_label.pack(side="left")
         
         # --- LoL Client Settings Frame ---
         self.config_frame = ctk.CTkFrame(self, border_width=1, border_color="#333333")
@@ -432,21 +438,20 @@ class App(ctk.CTk):
         text_lower = text.lower()
         if "in progress" in text_lower or "searching" in text_lower or "waiting for invitation" in text_lower or "starting" in text_lower:
             color = "#3498db" # Blue
-            icon = "🔵"
         elif "switch" in text_lower or "mov" in text_lower or "waiting for lcu" in text_lower or "finding match" in text_lower:
             color = "#f1c40f" # Yellow
-            icon = "🟡"
         elif "stop" in text_lower or "end of game" in text_lower or "quit" in text_lower or "error" in text_lower:
             color = "#e74c3c" # Red
-            icon = "🔴"
         elif "lobby" in text_lower or "connected" in text_lower or "accepted" in text_lower:
             color = "#2ecc71" # Green
-            icon = "🟢"
         else:
             color = "#ffffff"
-            icon = "⚪"
             
-        self.after(0, lambda: self.status_label.configure(text=f"{icon} Status: {text}", text_color=color))
+        def _apply():
+            self.status_dot.configure(text_color=color)
+            self.status_label.configure(text=f"Status: {text}", text_color=color)
+
+        self.after(0, _apply)
 
     def toggle_bot(self):
         if not self.is_running:
@@ -482,13 +487,13 @@ class App(ctk.CTk):
         else:
             self.is_running = False
             self.btn_toggle.configure(text="Start Bot", fg_color=["#3a7ebf", "#1f538d"], hover_color=["#325882", "#14375e"])
-            self.status_label.configure(text="🔴 Status: Stopped", text_color="#e74c3c")
+            self.status_dot.configure(text_color="#e74c3c")
+            self.status_label.configure(text="Status: Stopped", text_color="#e74c3c")
 
             for w in self._lol_widgets:
                 w.configure(state="normal")
             self.check_obs_enabled.configure(state="normal")
             self._on_toggle_obs_enabled()
-
             stop_bot()
 
 def run_app():

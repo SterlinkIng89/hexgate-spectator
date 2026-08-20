@@ -12,6 +12,7 @@ except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
 from lcu_driver import Connector
+from core.obs_controller import obs_controller
 
 # --- Base Configuration ---
 TEAM_CHAOS = 200
@@ -425,7 +426,8 @@ async def gameflow_handler(connection, event):
 
     phase = event.data
     
-    if phase != _previous_phase:
+    phase_changed = (phase != _previous_phase)
+    if phase_changed:
         logger.info(f"[GAMEFLOW] Phase changed: {_previous_phase} -> {phase}")
         _previous_phase = phase
 
@@ -436,7 +438,7 @@ async def gameflow_handler(connection, event):
     if phase in ["ChampSelect", "InProgress"]:
         is_searching = False
         
-    if phase == "InProgress":
+    if phase == "InProgress" and phase_changed:
         global _game_time_last_value, _game_time_last_changed_at, _was_in_progress
         global _last_game_time_log_at, _frozen_warnings_issued, _players_logged_for_current_game
         # Mark that we are now spectating a live game
@@ -449,8 +451,9 @@ async def gameflow_handler(connection, event):
         _players_logged_for_current_game = False
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
+        obs_controller.on_game_start()
 
-    if phase == "Reconnect" and _was_in_progress:
+    if phase == "Reconnect" and phase_changed and _was_in_progress:
         # The LCU emits "Reconnect" when the game server closes the session.
         # In a custom game, this happens when all players leave (remake/abandonment).
         # A normal in-game pause keeps the phase at "InProgress", so this is a
@@ -459,11 +462,11 @@ async def gameflow_handler(connection, event):
         await _cleanup_game_process(connection, "Game abandoned (Reconnect)")
         return
 
-    if phase in ["EndOfGame", "WaitingForStats"]:
+    if phase in ["EndOfGame", "WaitingForStats"] and phase_changed:
         logger.info(f"[GAMEFLOW] Game over (or Remake/Dodge). Phase is {phase}. Starting cleanup...")
         await _cleanup_game_process(connection, f"Game ended ({phase})")
 
-    elif phase == "None":
+    elif phase == "None" and phase_changed:
         is_searching = True
         if BOT_CONFIG["invite_only"]:
             update_gui_status("Waiting for invitation...")
@@ -486,6 +489,8 @@ async def _cleanup_game_process(connection, reason: str):
 
     logger.info(f"[CLEANUP] Triggered by: {reason}. Killing game process...")
     update_gui_status(f"{reason} — cleaning up...")
+
+    obs_controller.on_game_end()
 
     _was_in_progress = False
     _game_time_last_value = 0.0
@@ -545,18 +550,24 @@ async def handle_gsm_terminated_in_error(connection, event):
 # --- Control API for GUI ---
 def start_bot(callback, config_data):
     global bot_active, is_searching, status_callback, connector_thread_started, BOT_CONFIG
-    
+
     BOT_CONFIG.update(config_data)
-    
+
+    obs_controller.configure(config_data)
+    if obs_controller.enabled:
+        threading.Thread(target=obs_controller.connect, daemon=True).start()
+        if obs_controller.schedule_enabled:
+            obs_controller.start_scheduler()
+
     bot_active = True
     is_searching = True
     status_callback = callback
-    
+
     if BOT_CONFIG["invite_only"]:
         update_gui_status("Starting. Waiting for invitations...")
     else:
         update_gui_status(f"Starting. Searching '{BOT_CONFIG['lobby_name']}'...")
-    
+
     if not connector_thread_started:
         connector_thread_started = True
         threading.Thread(target=connector.start, daemon=True).start()
@@ -565,4 +576,10 @@ def stop_bot():
     global bot_active, is_searching
     bot_active = False
     is_searching = False
+
+    obs_controller.stop_scheduler()
+    obs_controller.on_game_end()
+    obs_controller.disconnect()
+
     update_gui_status("Bot Stopped.")
+

@@ -137,24 +137,102 @@ class App(ctk.CTk):
         self.check_obs_schedule = ctk.CTkSwitch(self.obs_frame, text="Schedule Stream by Time", font=label_font, command=self._on_toggle_obs_schedule)
         self.check_obs_schedule.grid(row=4, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
-        ctk.CTkLabel(self.obs_frame, text="Start (HH:MM):", font=label_font).grid(row=5, column=0, padx=10, pady=4, sticky="w")
-        self.entry_obs_start_time = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: 18:00", font=label_font, width=140)
-        self.entry_obs_start_time.grid(row=5, column=1, padx=10, pady=4, sticky="we")
+        # --- Start time pickers (12h + AM/PM) ---
+        ctk.CTkLabel(self.obs_frame, text="Stream Start:", font=label_font).grid(row=5, column=0, padx=10, pady=4, sticky="w")
+        start_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
+        start_time_frame.grid(row=5, column=1, padx=6, pady=4, sticky="we")
+        self.combo_start_hour = ctk.CTkComboBox(start_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font)
+        self.combo_start_hour.pack(side="left", padx=(0, 2))
+        ctk.CTkLabel(start_time_frame, text=":", font=label_font).pack(side="left")
+        self.combo_start_min = ctk.CTkComboBox(start_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font)
+        self.combo_start_min.pack(side="left", padx=(2, 4))
+        self.combo_start_ampm = ctk.CTkComboBox(start_time_frame, values=["AM", "PM"], width=58, font=label_font)
+        self.combo_start_ampm.pack(side="left")
 
-        ctk.CTkLabel(self.obs_frame, text="Stop (HH:MM):", font=label_font).grid(row=5, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_stop_time = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: 23:00", font=label_font, width=140)
-        self.entry_obs_stop_time.grid(row=5, column=3, padx=10, pady=4, sticky="we")
-        
+        # --- Stop time pickers (12h + AM/PM) ---
+        ctk.CTkLabel(self.obs_frame, text="Stream Stop:", font=label_font).grid(row=5, column=2, padx=10, pady=4, sticky="w")
+        stop_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
+        stop_time_frame.grid(row=5, column=3, padx=6, pady=4, sticky="we")
+        self.combo_stop_hour = ctk.CTkComboBox(stop_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font)
+        self.combo_stop_hour.pack(side="left", padx=(0, 2))
+        ctk.CTkLabel(stop_time_frame, text=":", font=label_font).pack(side="left")
+        self.combo_stop_min = ctk.CTkComboBox(stop_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font)
+        self.combo_stop_min.pack(side="left", padx=(2, 4))
+        self.combo_stop_ampm = ctk.CTkComboBox(stop_time_frame, values=["AM", "PM"], width=58, font=label_font)
+        self.combo_stop_ampm.pack(side="left")
+
+        # --- Countdown label ---
+        self.lbl_countdown = ctk.CTkLabel(self.obs_frame, text="", font=label_font, text_color="#f1c40f")
+        self.lbl_countdown.grid(row=6, column=0, columnspan=4, padx=10, pady=(2, 6), sticky="w")
+
+        # Keep a flat list for easy enable/disable
+        self._schedule_picker_widgets = [
+            self.combo_start_hour, self.combo_start_min, self.combo_start_ampm,
+            self.combo_stop_hour, self.combo_stop_min, self.combo_stop_ampm,
+        ]
+
         self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
         self.btn_toggle.pack(pady=8, padx=25, fill="x")
-        
+
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
         self.log_box.pack(pady=(5, 15), padx=25, fill="both", expand=True)
-        
+
         self.after(100, self.process_log_queue)
-        
+        self.after(1000, self._update_countdown)
+
         # Load saved config (if exists)
         self.load_config()
+
+    # ---- Helpers: 12h ↔ 24h conversion ----
+    @staticmethod
+    def _to_24h(hour_str: str, min_str: str, ampm: str) -> str:
+        """Converts 12h picker values to HH:MM (24h) string."""
+        h, m = int(hour_str), int(min_str)
+        if ampm == "AM":
+            h = 0 if h == 12 else h
+        else:
+            h = 12 if h == 12 else h + 12
+        return f"{h:02d}:{m:02d}"
+
+    @staticmethod
+    def _from_24h(hhmm: str):
+        """Converts HH:MM (24h) string to (hour_str, min_str, ampm). Returns defaults on error."""
+        try:
+            h, m = int(hhmm.split(":")[0]), int(hhmm.split(":")[1])
+            ampm = "AM" if h < 12 else "PM"
+            h12 = h % 12 or 12
+            m5 = min(round(m / 5) * 5, 55)
+            return f"{h12:02d}", f"{m5:02d}", ampm
+        except Exception:
+            return "06", "00", "AM"
+
+    def _update_countdown(self):
+        """Called every second. Shows time remaining until scheduled stream start."""
+        if self.check_obs_enabled.get() == 1 and self.check_obs_schedule.get() == 1:
+            import datetime as dt
+            try:
+                start_24h = self._to_24h(
+                    self.combo_start_hour.get(),
+                    self.combo_start_min.get(),
+                    self.combo_start_ampm.get()
+                )
+                now = dt.datetime.now()
+                target = now.replace(
+                    hour=int(start_24h.split(":")[0]),
+                    minute=int(start_24h.split(":")[1]),
+                    second=0, microsecond=0
+                )
+                if target <= now:
+                    target += dt.timedelta(days=1)
+                delta = target - now
+                h, rem = divmod(int(delta.total_seconds()), 3600)
+                mins, secs = divmod(rem, 60)
+                self.lbl_countdown.configure(text=f"⏱ Stream starts in: {h:02d}h {mins:02d}m {secs:02d}s")
+            except Exception:
+                self.lbl_countdown.configure(text="")
+        else:
+            self.lbl_countdown.configure(text="")
+        self.after(1000, self._update_countdown)
 
     def _on_toggle_obs_enabled(self):
         """Updates OBS entry states depending on whether OBS integration is enabled."""
@@ -171,11 +249,13 @@ class App(ctk.CTk):
         self._on_toggle_obs_schedule()
 
     def _on_toggle_obs_schedule(self):
-        """Updates Schedule entry states."""
+        """Enables/disables schedule picker widgets and clears countdown when inactive."""
         schedule_active = (self.check_obs_enabled.get() == 1 and self.check_obs_schedule.get() == 1)
         sched_state = "normal" if schedule_active else "disabled"
-        self.entry_obs_start_time.configure(state=sched_state)
-        self.entry_obs_stop_time.configure(state=sched_state)
+        for w in self._schedule_picker_widgets:
+            w.configure(state=sched_state)
+        if not schedule_active:
+            self.lbl_countdown.configure(text="")
 
     def load_config(self):
         """Loads configuration from config.json and initializes fields."""
@@ -253,8 +333,16 @@ class App(ctk.CTk):
         self.entry_obs_profile.insert(0, str(default_config.get("obs_profile", "")))
         self.entry_obs_scene_collection.insert(0, str(default_config.get("obs_scene_collection", "")))
         self.entry_obs_scene.insert(0, str(default_config.get("obs_scene", "")))
-        self.entry_obs_start_time.insert(0, str(default_config.get("obs_schedule_start_time", "")))
-        self.entry_obs_stop_time.insert(0, str(default_config.get("obs_schedule_stop_time", "")))
+
+        sh, sm, sampm = self._from_24h(str(default_config.get("obs_schedule_start_time", "")))
+        self.combo_start_hour.set(sh)
+        self.combo_start_min.set(sm)
+        self.combo_start_ampm.set(sampm)
+
+        eh, em, eampm = self._from_24h(str(default_config.get("obs_schedule_stop_time", "")))
+        self.combo_stop_hour.set(eh)
+        self.combo_stop_min.set(em)
+        self.combo_stop_ampm.set(eampm)
 
         self._on_toggle_obs_enabled()
 
@@ -276,8 +364,12 @@ class App(ctk.CTk):
             "obs_auto_start": self.check_obs_auto_start.get(),
             "obs_auto_stop": self.check_obs_auto_stop.get(),
             "obs_schedule_enabled": self.check_obs_schedule.get(),
-            "obs_schedule_start_time": self.entry_obs_start_time.get().strip(),
-            "obs_schedule_stop_time": self.entry_obs_stop_time.get().strip()
+            "obs_schedule_start_time": self._to_24h(
+                self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get()
+            ),
+            "obs_schedule_stop_time": self._to_24h(
+                self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
+            ),
         }
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -372,16 +464,20 @@ class App(ctk.CTk):
                 "obs_auto_start": self.check_obs_auto_start.get() == 1,
                 "obs_auto_stop": self.check_obs_auto_stop.get() == 1,
                 "obs_schedule_enabled": self.check_obs_schedule.get() == 1,
-                "obs_schedule_start_time": self.entry_obs_start_time.get().strip(),
-                "obs_schedule_stop_time": self.entry_obs_stop_time.get().strip()
+                "obs_schedule_start_time": self._to_24h(
+                    self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get()
+                ),
+                "obs_schedule_stop_time": self._to_24h(
+                    self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
+                ),
             }
-            
+
             self.entry_lobby.configure(state="disabled")
             self.entry_passwords.configure(state="disabled")
             self.entry_delay.configure(state="disabled")
             self.entry_ignored.configure(state="disabled")
             self.check_invite_only.configure(state="disabled")
-            
+
             self.check_obs_enabled.configure(state="disabled")
             self.check_obs_auto_start.configure(state="disabled")
             self.check_obs_auto_stop.configure(state="disabled")
@@ -392,9 +488,9 @@ class App(ctk.CTk):
             self.entry_obs_profile.configure(state="disabled")
             self.entry_obs_scene_collection.configure(state="disabled")
             self.entry_obs_scene.configure(state="disabled")
-            self.entry_obs_start_time.configure(state="disabled")
-            self.entry_obs_stop_time.configure(state="disabled")
-            
+            for w in self._schedule_picker_widgets:
+                w.configure(state="disabled")
+
             self.is_running = True
             self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")
             start_bot(self.update_status, config_data)
@@ -402,16 +498,16 @@ class App(ctk.CTk):
             self.is_running = False
             self.btn_toggle.configure(text="Start Bot", fg_color=["#3a7ebf", "#1f538d"], hover_color=["#325882", "#14375e"])
             self.status_label.configure(text="🔴 Status: Stopped", text_color="#e74c3c")
-            
+
             self.entry_lobby.configure(state="normal")
             self.entry_passwords.configure(state="normal")
             self.entry_delay.configure(state="normal")
             self.entry_ignored.configure(state="normal")
             self.check_invite_only.configure(state="normal")
-            
+
             self.check_obs_enabled.configure(state="normal")
             self._on_toggle_obs_enabled()
-            
+
             stop_bot()
 
 def run_app():

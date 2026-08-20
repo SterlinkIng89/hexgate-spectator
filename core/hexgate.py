@@ -449,6 +449,8 @@ async def gameflow_handler(connection, event):
         _players_logged_for_current_game = False
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
+        from core.obs_controller import obs_controller
+        obs_controller.on_game_start()
 
     if phase == "Reconnect" and _was_in_progress:
         # The LCU emits "Reconnect" when the game server closes the session.
@@ -486,6 +488,9 @@ async def _cleanup_game_process(connection, reason: str):
 
     logger.info(f"[CLEANUP] Triggered by: {reason}. Killing game process...")
     update_gui_status(f"{reason} — cleaning up...")
+
+    from core.obs_controller import obs_controller
+    obs_controller.on_game_end()
 
     _was_in_progress = False
     _game_time_last_value = 0.0
@@ -548,6 +553,11 @@ def start_bot(callback, config_data):
     
     BOT_CONFIG.update(config_data)
     
+    from core.obs_controller import obs_controller
+    obs_controller.configure(config_data)
+    if obs_controller.enabled:
+        threading.Thread(target=obs_controller.connect, daemon=True).start()
+
     bot_active = True
     is_searching = True
     status_callback = callback
@@ -565,4 +575,9 @@ def stop_bot():
     global bot_active, is_searching
     bot_active = False
     is_searching = False
+    
+    from core.obs_controller import obs_controller
+    obs_controller.on_game_end()
+    obs_controller.disconnect()
+    
     update_gui_status("Bot Stopped.")

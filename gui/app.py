@@ -31,6 +31,21 @@ class TextboxHandler(logging.Handler):
         self.log_queue.put(msg)
 
 class App(ctk.CTk):
+    _OBS_DEFAULTS = {
+        "obs_enabled": 0,
+        "obs_host": "localhost",
+        "obs_port": "4455",
+        "obs_password": "",
+        "obs_profile": "",
+        "obs_scene_collection": "",
+        "obs_scene": "",
+        "obs_auto_start": 1,
+        "obs_auto_stop": 1,
+        "obs_schedule_enabled": 0,
+        "obs_schedule_start_time": "",
+        "obs_schedule_stop_time": "",
+    }
+
     def __init__(self):
         super().__init__()
         
@@ -165,7 +180,17 @@ class App(ctk.CTk):
         self.lbl_countdown = ctk.CTkLabel(self.obs_frame, text="", font=label_font, text_color="#f1c40f")
         self.lbl_countdown.grid(row=6, column=0, columnspan=4, padx=10, pady=(2, 6), sticky="w")
 
-        # Keep a flat list for easy enable/disable
+        # Widget lists — used by _on_toggle_* and toggle_bot to avoid
+        # manually listing every widget in multiple places.
+        self._lol_widgets = [
+            self.entry_lobby, self.entry_passwords, self.entry_delay,
+            self.entry_ignored, self.check_invite_only,
+        ]
+        self._obs_connection_widgets = [
+            self.entry_obs_host, self.entry_obs_port, self.entry_obs_password,
+            self.entry_obs_profile, self.entry_obs_scene_collection, self.entry_obs_scene,
+            self.check_obs_auto_start, self.check_obs_auto_stop, self.check_obs_schedule,
+        ]
         self._schedule_picker_widgets = [
             self.combo_start_hour, self.combo_start_min, self.combo_start_ampm,
             self.combo_stop_hour, self.combo_stop_min, self.combo_stop_ampm,
@@ -236,17 +261,11 @@ class App(ctk.CTk):
 
     def _on_toggle_obs_enabled(self):
         """Updates OBS entry states depending on whether OBS integration is enabled."""
-        obs_state = "normal" if self.check_obs_enabled.get() == 1 else "disabled"
-        self.entry_obs_host.configure(state=obs_state)
-        self.entry_obs_port.configure(state=obs_state)
-        self.entry_obs_password.configure(state=obs_state)
-        self.entry_obs_profile.configure(state=obs_state)
-        self.entry_obs_scene_collection.configure(state=obs_state)
-        self.entry_obs_scene.configure(state=obs_state)
-        self.check_obs_auto_start.configure(state=obs_state)
-        self.check_obs_auto_stop.configure(state=obs_state)
-        self.check_obs_schedule.configure(state=obs_state)
+        state = "normal" if self.check_obs_enabled.get() == 1 else "disabled"
+        for w in self._obs_connection_widgets:
+            w.configure(state=state)
         self._on_toggle_obs_schedule()
+
 
     def _on_toggle_obs_schedule(self):
         """Enables/disables schedule picker widgets and clears countdown when inactive."""
@@ -265,19 +284,9 @@ class App(ctk.CTk):
             "camera_delay": "3",
             "ignored_words": "",
             "invite_only": 0,
-            "obs_enabled": 0,
-            "obs_host": "localhost",
-            "obs_port": "4455",
-            "obs_password": "",
-            "obs_profile": "",
-            "obs_scene_collection": "",
-            "obs_scene": "",
-            "obs_auto_start": 1,
-            "obs_auto_stop": 1,
-            "obs_schedule_enabled": 0,
-            "obs_schedule_start_time": "",
-            "obs_schedule_stop_time": ""
+            **self._OBS_DEFAULTS,
         }
+
         
         if os.path.exists(CONFIG_FILE):
             try:
@@ -346,6 +355,27 @@ class App(ctk.CTk):
 
         self._on_toggle_obs_enabled()
 
+    def _build_obs_config(self) -> dict:
+        """Single source of truth for the current OBS widget state as a config dict."""
+        return {
+            "obs_enabled": self.check_obs_enabled.get() == 1,
+            "obs_host": self.entry_obs_host.get().strip(),
+            "obs_port": self.entry_obs_port.get().strip(),
+            "obs_password": self.entry_obs_password.get(),
+            "obs_profile": self.entry_obs_profile.get().strip(),
+            "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
+            "obs_scene": self.entry_obs_scene.get().strip(),
+            "obs_auto_start": self.check_obs_auto_start.get() == 1,
+            "obs_auto_stop": self.check_obs_auto_stop.get() == 1,
+            "obs_schedule_enabled": self.check_obs_schedule.get() == 1,
+            "obs_schedule_start_time": self._to_24h(
+                self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get()
+            ),
+            "obs_schedule_stop_time": self._to_24h(
+                self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
+            ),
+        }
+
     def save_config(self):
         """Saves current configuration to config.json."""
         config_data = {
@@ -354,28 +384,14 @@ class App(ctk.CTk):
             "camera_delay": self.entry_delay.get().strip(),
             "ignored_words": self.entry_ignored.get().strip(),
             "invite_only": self.check_invite_only.get(),
-            "obs_enabled": self.check_obs_enabled.get(),
-            "obs_host": self.entry_obs_host.get().strip(),
-            "obs_port": self.entry_obs_port.get().strip(),
-            "obs_password": self.entry_obs_password.get(),
-            "obs_profile": self.entry_obs_profile.get().strip(),
-            "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
-            "obs_scene": self.entry_obs_scene.get().strip(),
-            "obs_auto_start": self.check_obs_auto_start.get(),
-            "obs_auto_stop": self.check_obs_auto_stop.get(),
-            "obs_schedule_enabled": self.check_obs_schedule.get(),
-            "obs_schedule_start_time": self._to_24h(
-                self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get()
-            ),
-            "obs_schedule_stop_time": self._to_24h(
-                self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
-            ),
+            **self._build_obs_config(),
         }
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config_data, f, indent=4)
         except Exception as e:
             logging.error(f"Error saving configuration: {e}")
+
 
     def setup_logging(self):
         logger = logging.getLogger()
@@ -434,61 +450,30 @@ class App(ctk.CTk):
 
     def toggle_bot(self):
         if not self.is_running:
-            # Save preferences on start
             self.save_config()
-            
+
             passwords_raw = self.entry_passwords.get()
             passwords = [p.strip() for p in passwords_raw.split(",")] if passwords_raw else []
-            
             ignored_raw = self.entry_ignored.get()
             ignored = [w.strip() for w in ignored_raw.split(",")] if ignored_raw else []
-            
             try:
                 cam_delay = float(self.entry_delay.get())
             except ValueError:
                 cam_delay = 3.0
-            
+
             config_data = {
                 "lobby_name": self.entry_lobby.get().strip(),
                 "passwords": passwords,
                 "camera_delay": cam_delay,
                 "ignored_words": ignored,
                 "invite_only": self.check_invite_only.get() == 1,
-                "obs_enabled": self.check_obs_enabled.get() == 1,
-                "obs_host": self.entry_obs_host.get().strip(),
-                "obs_port": self.entry_obs_port.get().strip(),
-                "obs_password": self.entry_obs_password.get(),
-                "obs_profile": self.entry_obs_profile.get().strip(),
-                "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
-                "obs_scene": self.entry_obs_scene.get().strip(),
-                "obs_auto_start": self.check_obs_auto_start.get() == 1,
-                "obs_auto_stop": self.check_obs_auto_stop.get() == 1,
-                "obs_schedule_enabled": self.check_obs_schedule.get() == 1,
-                "obs_schedule_start_time": self._to_24h(
-                    self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get()
-                ),
-                "obs_schedule_stop_time": self._to_24h(
-                    self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
-                ),
+                **self._build_obs_config(),
             }
 
-            self.entry_lobby.configure(state="disabled")
-            self.entry_passwords.configure(state="disabled")
-            self.entry_delay.configure(state="disabled")
-            self.entry_ignored.configure(state="disabled")
-            self.check_invite_only.configure(state="disabled")
-
+            for w in self._lol_widgets:
+                w.configure(state="disabled")
             self.check_obs_enabled.configure(state="disabled")
-            self.check_obs_auto_start.configure(state="disabled")
-            self.check_obs_auto_stop.configure(state="disabled")
-            self.check_obs_schedule.configure(state="disabled")
-            self.entry_obs_host.configure(state="disabled")
-            self.entry_obs_port.configure(state="disabled")
-            self.entry_obs_password.configure(state="disabled")
-            self.entry_obs_profile.configure(state="disabled")
-            self.entry_obs_scene_collection.configure(state="disabled")
-            self.entry_obs_scene.configure(state="disabled")
-            for w in self._schedule_picker_widgets:
+            for w in self._obs_connection_widgets + self._schedule_picker_widgets:
                 w.configure(state="disabled")
 
             self.is_running = True
@@ -499,12 +484,8 @@ class App(ctk.CTk):
             self.btn_toggle.configure(text="Start Bot", fg_color=["#3a7ebf", "#1f538d"], hover_color=["#325882", "#14375e"])
             self.status_label.configure(text="🔴 Status: Stopped", text_color="#e74c3c")
 
-            self.entry_lobby.configure(state="normal")
-            self.entry_passwords.configure(state="normal")
-            self.entry_delay.configure(state="normal")
-            self.entry_ignored.configure(state="normal")
-            self.check_invite_only.configure(state="normal")
-
+            for w in self._lol_widgets:
+                w.configure(state="normal")
             self.check_obs_enabled.configure(state="normal")
             self._on_toggle_obs_enabled()
 

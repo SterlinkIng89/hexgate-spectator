@@ -12,6 +12,7 @@ except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
 from lcu_driver import Connector
+from core.obs_controller import obs_controller
 
 # --- Base Configuration ---
 TEAM_CHAOS = 200
@@ -450,7 +451,6 @@ async def gameflow_handler(connection, event):
         _players_logged_for_current_game = False
         from core.game_automation import trigger_camera_automation
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
-        from core.obs_controller import obs_controller
         obs_controller.on_game_start()
 
     if phase == "Reconnect" and phase_changed and _was_in_progress:
@@ -490,7 +490,6 @@ async def _cleanup_game_process(connection, reason: str):
     logger.info(f"[CLEANUP] Triggered by: {reason}. Killing game process...")
     update_gui_status(f"{reason} — cleaning up...")
 
-    from core.obs_controller import obs_controller
     obs_controller.on_game_end()
 
     _was_in_progress = False
@@ -551,10 +550,9 @@ async def handle_gsm_terminated_in_error(connection, event):
 # --- Control API for GUI ---
 def start_bot(callback, config_data):
     global bot_active, is_searching, status_callback, connector_thread_started, BOT_CONFIG
-    
+
     BOT_CONFIG.update(config_data)
-    
-    from core.obs_controller import obs_controller
+
     obs_controller.configure(config_data)
     if obs_controller.enabled:
         threading.Thread(target=obs_controller.connect, daemon=True).start()
@@ -564,12 +562,12 @@ def start_bot(callback, config_data):
     bot_active = True
     is_searching = True
     status_callback = callback
-    
+
     if BOT_CONFIG["invite_only"]:
         update_gui_status("Starting. Waiting for invitations...")
     else:
         update_gui_status(f"Starting. Searching '{BOT_CONFIG['lobby_name']}'...")
-    
+
     if not connector_thread_started:
         connector_thread_started = True
         threading.Thread(target=connector.start, daemon=True).start()
@@ -578,10 +576,10 @@ def stop_bot():
     global bot_active, is_searching
     bot_active = False
     is_searching = False
-    
-    from core.obs_controller import obs_controller
+
     obs_controller.stop_scheduler()
     obs_controller.on_game_end()
     obs_controller.disconnect()
-    
+
     update_gui_status("Bot Stopped.")
+

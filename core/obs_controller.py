@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,18 @@ class OBSController:
             return self.connect()
         return True
 
+    def _obs_call(self, log_label: str, method: str, *args) -> bool:
+        """Acquires the RLock, ensures connection, then calls self._client.<method>(*args)."""
+        with self._lock:
+            if not self._ensure_connected():
+                return False
+            try:
+                getattr(self._client, method)(*args)
+                return True
+            except Exception as e:
+                logger.error(f"[OBS] {log_label}: {e}")
+                return False
+
     def get_stream_status(self) -> dict:
         """Returns dictionary with current stream state."""
         with self._lock:
@@ -108,50 +121,26 @@ class OBSController:
                 self._client = None
                 return {"active": False, "timecode": "", "reconnecting": False, "connected": False}
 
-    def set_profile(self, profile_name: str) -> bool:
+    def set_profile(self, name: str) -> bool:
         """Switches the current OBS Profile."""
-        if not profile_name:
+        if not name:
             return True
-        with self._lock:
-            if not self._ensure_connected():
-                return False
-            try:
-                logger.info(f"[OBS] Switching profile to: \"{profile_name}\"")
-                self._client.set_current_profile(profile_name)
-                return True
-            except Exception as e:
-                logger.error(f"[OBS] Failed to switch profile to \"{profile_name}\": {e}")
-                return False
+        logger.info(f'[OBS] Switching profile to: "{name}"')
+        return self._obs_call(f'Failed to switch profile to "{name}"', "set_current_profile", name)
 
-    def set_scene_collection(self, collection_name: str) -> bool:
+    def set_scene_collection(self, name: str) -> bool:
         """Switches the current OBS Scene Collection."""
-        if not collection_name:
+        if not name:
             return True
-        with self._lock:
-            if not self._ensure_connected():
-                return False
-            try:
-                logger.info(f"[OBS] Switching scene collection to: \"{collection_name}\"")
-                self._client.set_current_scene_collection(collection_name)
-                return True
-            except Exception as e:
-                logger.error(f"[OBS] Failed to switch scene collection to \"{collection_name}\": {e}")
-                return False
+        logger.info(f'[OBS] Switching scene collection to: "{name}"')
+        return self._obs_call(f'Failed to switch scene collection to "{name}"', "set_current_scene_collection", name)
 
-    def set_scene(self, scene_name: str) -> bool:
+    def set_scene(self, name: str) -> bool:
         """Switches the active program scene."""
-        if not scene_name:
+        if not name:
             return True
-        with self._lock:
-            if not self._ensure_connected():
-                return False
-            try:
-                logger.info(f"[OBS] Switching program scene to: \"{scene_name}\"")
-                self._client.set_current_program_scene(scene_name)
-                return True
-            except Exception as e:
-                logger.error(f"[OBS] Failed to switch program scene to \"{scene_name}\": {e}")
-                return False
+        logger.info(f'[OBS] Switching program scene to: "{name}"')
+        return self._obs_call(f'Failed to switch program scene to "{name}"', "set_current_program_scene", name)
 
     def start_stream(self) -> bool:
         """Starts streaming in OBS if not already running."""
@@ -194,12 +183,27 @@ class OBSController:
                 logger.error(f"[OBS] Failed to stop stream: {e}")
                 return False
 
+    def _apply_scene_and_start(self):
+        """
+        Applies the configured profile, scene collection and scene in order,
+        then starts the stream. Shared by on_game_start and the scheduler.
+        """
+        if self.profile:
+            self.set_profile(self.profile)
+            time.sleep(0.5)
+        if self.scene_collection:
+            self.set_scene_collection(self.scene_collection)
+            time.sleep(0.5)
+        if self.scene:
+            self.set_scene(self.scene)
+            time.sleep(0.2)
+        self.start_stream()
+
     def is_current_time_in_range(self) -> bool:
         """Checks if the current local time falls within the configured start and stop times."""
         if not self.schedule_start_time or not self.schedule_stop_time:
             return True
         try:
-            from datetime import datetime
             now = datetime.now().time()
             start = datetime.strptime(self.schedule_start_time, "%H:%M").time()
             stop = datetime.strptime(self.schedule_stop_time, "%H:%M").time()
@@ -219,8 +223,11 @@ class OBSController:
         self._scheduler_running = True
 
         def _schedule_loop():
-            logger.info(f"[OBS Schedule] Scheduler active (Start: {self.schedule_start_time or 'Any'}, Stop: {self.schedule_stop_time or 'Any'}).")
-            from datetime import datetime
+            logger.info(
+                f"[OBS Schedule] Scheduler active "
+                f"(Start: {self.schedule_start_time or 'Any'}, "
+                f"Stop: {self.schedule_stop_time or 'Any'})."
+            )
             while self._scheduler_running:
                 try:
                     if self.enabled and self.schedule_enabled:
@@ -228,25 +235,12 @@ class OBSController:
                         now_str = now_dt.strftime("%H:%M")
                         today_str = now_dt.strftime("%Y-%m-%d")
 
-                        # Check scheduled start
                         if self.schedule_start_time and now_str == self.schedule_start_time:
                             if self._last_schedule_start_day != today_str:
                                 self._last_schedule_start_day = today_str
                                 logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
-                                def _start_worker():
-                                    if self.profile:
-                                        self.set_profile(self.profile)
-                                        time.sleep(0.5)
-                                    if self.scene_collection:
-                                        self.set_scene_collection(self.scene_collection)
-                                        time.sleep(0.5)
-                                    if self.scene:
-                                        self.set_scene(self.scene)
-                                        time.sleep(0.2)
-                                    self.start_stream()
-                                threading.Thread(target=_start_worker, daemon=True).start()
+                                threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
 
-                        # Check scheduled stop
                         if self.schedule_stop_time and now_str == self.schedule_stop_time:
                             if self._last_schedule_stop_day != today_str:
                                 self._last_schedule_stop_day = today_str
@@ -267,35 +261,23 @@ class OBSController:
     def on_game_start(self):
         """
         Triggered when match enters InProgress phase.
-        Applies profile, scene collection, scene (if configured), and starts the stream.
+        Applies profile/collection/scene and starts the stream.
         Respects schedule window if schedule_enabled is True.
         Runs asynchronously in a daemon thread.
         """
         if not self.enabled or not self.auto_start:
             return
-
         if self.schedule_enabled and not self.is_current_time_in_range():
-            logger.info(f"[OBS Schedule] Game started but current time is outside scheduled window ({self.schedule_start_time} - {self.schedule_stop_time}). Skipping stream start.")
+            logger.info(
+                f"[OBS Schedule] Game started outside scheduled window "
+                f"({self.schedule_start_time} - {self.schedule_stop_time}). Skipping."
+            )
             return
 
         def _worker():
-            time.sleep(1.0) # Small pause for game window to stabilize
-            if not self._ensure_connected():
-                return
-
-            if self.profile:
-                self.set_profile(self.profile)
-                time.sleep(0.5)
-
-            if self.scene_collection:
-                self.set_scene_collection(self.scene_collection)
-                time.sleep(0.5)
-
-            if self.scene:
-                self.set_scene(self.scene)
-                time.sleep(0.2)
-
-            self.start_stream()
+            time.sleep(1.0)  # Small pause for game window to stabilize
+            if self._ensure_connected():
+                self._apply_scene_and_start()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -307,11 +289,8 @@ class OBSController:
         """
         if not self.enabled or not self.auto_stop:
             return
+        threading.Thread(target=self.stop_stream, daemon=True).start()
 
-        def _worker():
-            self.stop_stream()
-
-        threading.Thread(target=_worker, daemon=True).start()
 
 # Global singleton instance
 obs_controller = OBSController()

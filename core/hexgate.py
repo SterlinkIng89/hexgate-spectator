@@ -214,44 +214,14 @@ async def search_and_join_loop(connection):
 
                             if _game_time_last_changed_at > 0 and frozen_for >= GAME_FREEZE_TIMEOUT:
                                 logger.warning(f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. Assuming all players left. Forcing cleanup...")
-                                update_gui_status("Game abandoned — cleaning up...")
-                                # Reset tracking
-                                _game_time_last_value = 0.0
-                                _game_time_last_changed_at = 0.0
-                                _last_game_time_log_at = 0.0
-                                _frozen_warnings_issued.clear()
-                                _players_logged_for_current_game = False
-                                # Run the same cleanup as EndOfGame
-                                import subprocess
-                                try:
-                                    res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
-                                    logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
-                                except Exception as e:
-                                    logger.error(f"[PROCESS] Failed to close game client: {e}")
-                                await asyncio.sleep(5)
-                                await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
-                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
-                                is_searching = True
-                                if BOT_CONFIG["invite_only"]:
-                                    update_gui_status("Waiting for invitation...")
-                                else:
-                                    update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+                                await _cleanup_game_process(connection, f"Game frozen for {frozen_for:.0f}s")
                     else:
                         # API unreachable — game process probably already died
                         if _game_time_last_changed_at > 0:
                             frozen_for = time.time() - _game_time_last_changed_at
                             if frozen_for >= GAME_FREEZE_TIMEOUT:
                                 logger.warning("Game API unreachable for too long. Forcing cleanup...")
-                                _game_time_last_value = 0.0
-                                _game_time_last_changed_at = 0.0
-                                await asyncio.sleep(5)
-                                await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
-                                await connection.request("post", "/lol-lobby/v2/lobby/quit")
-                                is_searching = True
-                                if BOT_CONFIG["invite_only"]:
-                                    update_gui_status("Waiting for invitation...")
-                                else:
-                                    update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+                                await _cleanup_game_process(connection, "Game API unreachable")
 
                 # We only want to search if we are in "None" (waiting) OR "Lobby" (to check for better remakes)
                 if current_phase in ["None", "Lobby"]:
@@ -486,49 +456,12 @@ async def gameflow_handler(connection, event):
         # A normal in-game pause keeps the phase at "InProgress", so this is a
         # reliable signal that the game ended unexpectedly.
         logger.info("Reconnect phase detected after InProgress. All players likely left. Cleaning up...")
-        update_gui_status("Game abandoned (Reconnect) — cleaning up...")
-        _was_in_progress = False
-        _game_time_last_value = 0.0
-        _game_time_last_changed_at = 0.0
-        _last_game_time_log_at = 0.0
-        _frozen_warnings_issued.clear()
-        _players_logged_for_current_game = False
-        import subprocess
-        try:
-            res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
-            logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
-        except Exception as e:
-            logger.error(f"[PROCESS] Failed to close game client: {e}")
-        await asyncio.sleep(3)
-        await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
-        await connection.request("post", "/lol-lobby/v2/lobby/quit")
-        is_searching = True
-        if BOT_CONFIG["invite_only"]:
-            update_gui_status("Waiting for invitation...")
-        else:
-            update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+        await _cleanup_game_process(connection, "Game abandoned (Reconnect)")
         return
 
     if phase in ["EndOfGame", "WaitingForStats"]:
         logger.info(f"[GAMEFLOW] Game over (or Remake/Dodge). Phase is {phase}. Starting cleanup...")
-        
-        # Forcefully close the game client if it's stuck on the Victory/Defeat screen
-        import subprocess
-        try:
-            res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
-            logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
-        except Exception as e:
-            logger.error(f"[PROCESS] Failed to close game client: {e}")
-            
-        await asyncio.sleep(5)
-        await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
-        await connection.request("post", "/lol-lobby/v2/lobby/quit")
-        is_searching = True
-        
-        if BOT_CONFIG["invite_only"]:
-            update_gui_status("Waiting for invitation...")
-        else:
-            update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+        await _cleanup_game_process(connection, f"Game ended ({phase})")
 
     elif phase == "None":
         is_searching = True
@@ -536,6 +469,77 @@ async def gameflow_handler(connection, event):
             update_gui_status("Waiting for invitation...")
         else:
             update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+
+
+async def _cleanup_game_process(connection, reason: str):
+    """Kill the LoL game process and reset the bot back to searching state.
+    
+    This is the shared cleanup path triggered by:
+    - EndOfGame / WaitingForStats (normal game end)
+    - Reconnect phase after InProgress (all players left mid-game)
+    - TERMINATED_IN_ERROR GSM event (server-side game termination, e.g. AFK chaos)
+    - Frozen game time fallback (5-minute timeout)
+    """
+    global is_searching, _was_in_progress
+    global _game_time_last_value, _game_time_last_changed_at
+    global _last_game_time_log_at, _frozen_warnings_issued, _players_logged_for_current_game
+
+    logger.info(f"[CLEANUP] Triggered by: {reason}. Killing game process...")
+    update_gui_status(f"{reason} — cleaning up...")
+
+    _was_in_progress = False
+    _game_time_last_value = 0.0
+    _game_time_last_changed_at = 0.0
+    _last_game_time_log_at = 0.0
+    _frozen_warnings_issued.clear()
+    _players_logged_for_current_game = False
+
+    import subprocess
+    try:
+        res = subprocess.run(["taskkill", "/F", "/IM", "League of Legends.exe"], capture_output=True, text=True)
+        logger.info(f"[PROCESS] taskkill League of Legends.exe -> Exit {res.returncode}. stdout: {res.stdout.strip()} stderr: {res.stderr.strip()}")
+    except Exception as e:
+        logger.error(f"[PROCESS] Failed to close game client: {e}")
+
+    await asyncio.sleep(3)
+    await connection.request("post", "/lol-end-of-game/v1/state/dismiss-stats")
+    await connection.request("post", "/lol-lobby/v2/lobby/quit")
+    is_searching = True
+
+    if BOT_CONFIG["invite_only"]:
+        update_gui_status("Waiting for invitation...")
+    else:
+        update_gui_status(f"Searching '{BOT_CONFIG['lobby_name']}'...")
+
+
+@connector.ws.register("/riot-messaging-service/v1/message/lol-gsm-server/v1/gsm/game-update/TERMINATED_IN_ERROR", event_types=("CREATE", "UPDATE"))
+async def handle_gsm_terminated_in_error(connection, event):
+    """Handles the GSM TERMINATED_IN_ERROR event.
+    
+    This event fires when the game server terminates the session abnormally,
+    for example when players go AFK and the game cannot continue. The LoL
+    process may stay alive even though the session is dead, so we must kill
+    it explicitly here — otherwise the bot stays stuck on 'InProgress' and
+    never returns to searching.
+    """
+    global bot_active, _was_in_progress
+    if not bot_active:
+        return
+
+    data = event.data or {}
+    # The payload is a JSON string nested inside the outer data dict
+    import json
+    payload_raw = data.get("payload", "{}")
+    try:
+        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    except Exception:
+        payload = {}
+
+    game_id = payload.get("id", "?")
+    game_state = payload.get("gameState", "TERMINATED_IN_ERROR")
+    logger.info(f"[GSM] Received {game_state} for game {game_id}. Forcing game process cleanup.")
+
+    await _cleanup_game_process(connection, f"GSM {game_state} (game {game_id})")
 
 
 # --- Control API for GUI ---

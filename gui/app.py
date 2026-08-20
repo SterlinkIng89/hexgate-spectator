@@ -36,7 +36,7 @@ class App(ctk.CTk):
         
         # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
-        self.geometry("700x860")
+        self.geometry("700x900")
         self.resizable(False, False)
         
         ctk.set_appearance_mode("dark")
@@ -133,6 +133,17 @@ class App(ctk.CTk):
         ctk.CTkLabel(self.obs_frame, text="Active Scene:", font=label_font).grid(row=3, column=2, padx=10, pady=4, sticky="w")
         self.entry_obs_scene = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: InGame", font=label_font, width=140)
         self.entry_obs_scene.grid(row=3, column=3, padx=10, pady=4, sticky="we")
+
+        self.check_obs_schedule = ctk.CTkSwitch(self.obs_frame, text="Schedule Stream by Time", font=label_font, command=self._on_toggle_obs_schedule)
+        self.check_obs_schedule.grid(row=4, column=0, columnspan=4, padx=10, pady=6, sticky="w")
+
+        ctk.CTkLabel(self.obs_frame, text="Start (HH:MM):", font=label_font).grid(row=5, column=0, padx=10, pady=4, sticky="w")
+        self.entry_obs_start_time = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: 18:00", font=label_font, width=140)
+        self.entry_obs_start_time.grid(row=5, column=1, padx=10, pady=4, sticky="we")
+
+        ctk.CTkLabel(self.obs_frame, text="Stop (HH:MM):", font=label_font).grid(row=5, column=2, padx=10, pady=4, sticky="w")
+        self.entry_obs_stop_time = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: 23:00", font=label_font, width=140)
+        self.entry_obs_stop_time.grid(row=5, column=3, padx=10, pady=4, sticky="we")
         
         self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
         self.btn_toggle.pack(pady=8, padx=25, fill="x")
@@ -147,15 +158,24 @@ class App(ctk.CTk):
 
     def _on_toggle_obs_enabled(self):
         """Updates OBS entry states depending on whether OBS integration is enabled."""
-        state = "normal" if self.check_obs_enabled.get() == 1 else "disabled"
-        self.entry_obs_host.configure(state=state)
-        self.entry_obs_port.configure(state=state)
-        self.entry_obs_password.configure(state=state)
-        self.entry_obs_profile.configure(state=state)
-        self.entry_obs_scene_collection.configure(state=state)
-        self.entry_obs_scene.configure(state=state)
-        self.check_obs_auto_start.configure(state=state)
-        self.check_obs_auto_stop.configure(state=state)
+        obs_state = "normal" if self.check_obs_enabled.get() == 1 else "disabled"
+        self.entry_obs_host.configure(state=obs_state)
+        self.entry_obs_port.configure(state=obs_state)
+        self.entry_obs_password.configure(state=obs_state)
+        self.entry_obs_profile.configure(state=obs_state)
+        self.entry_obs_scene_collection.configure(state=obs_state)
+        self.entry_obs_scene.configure(state=obs_state)
+        self.check_obs_auto_start.configure(state=obs_state)
+        self.check_obs_auto_stop.configure(state=obs_state)
+        self.check_obs_schedule.configure(state=obs_state)
+        self._on_toggle_obs_schedule()
+
+    def _on_toggle_obs_schedule(self):
+        """Updates Schedule entry states."""
+        schedule_active = (self.check_obs_enabled.get() == 1 and self.check_obs_schedule.get() == 1)
+        sched_state = "normal" if schedule_active else "disabled"
+        self.entry_obs_start_time.configure(state=sched_state)
+        self.entry_obs_stop_time.configure(state=sched_state)
 
     def load_config(self):
         """Loads configuration from config.json and initializes fields."""
@@ -173,7 +193,10 @@ class App(ctk.CTk):
             "obs_scene_collection": "",
             "obs_scene": "",
             "obs_auto_start": 1,
-            "obs_auto_stop": 1
+            "obs_auto_stop": 1,
+            "obs_schedule_enabled": 0,
+            "obs_schedule_start_time": "",
+            "obs_schedule_stop_time": ""
         }
         
         if os.path.exists(CONFIG_FILE):
@@ -219,12 +242,19 @@ class App(ctk.CTk):
         else:
             self.check_obs_auto_stop.deselect()
 
+        if default_config.get("obs_schedule_enabled", 0):
+            self.check_obs_schedule.select()
+        else:
+            self.check_obs_schedule.deselect()
+
         self.entry_obs_host.insert(0, str(default_config.get("obs_host", "localhost")))
         self.entry_obs_port.insert(0, str(default_config.get("obs_port", "4455")))
         self.entry_obs_password.insert(0, str(default_config.get("obs_password", "")))
         self.entry_obs_profile.insert(0, str(default_config.get("obs_profile", "")))
         self.entry_obs_scene_collection.insert(0, str(default_config.get("obs_scene_collection", "")))
         self.entry_obs_scene.insert(0, str(default_config.get("obs_scene", "")))
+        self.entry_obs_start_time.insert(0, str(default_config.get("obs_schedule_start_time", "")))
+        self.entry_obs_stop_time.insert(0, str(default_config.get("obs_schedule_stop_time", "")))
 
         self._on_toggle_obs_enabled()
 
@@ -244,7 +274,10 @@ class App(ctk.CTk):
             "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
             "obs_scene": self.entry_obs_scene.get().strip(),
             "obs_auto_start": self.check_obs_auto_start.get(),
-            "obs_auto_stop": self.check_obs_auto_stop.get()
+            "obs_auto_stop": self.check_obs_auto_stop.get(),
+            "obs_schedule_enabled": self.check_obs_schedule.get(),
+            "obs_schedule_start_time": self.entry_obs_start_time.get().strip(),
+            "obs_schedule_stop_time": self.entry_obs_stop_time.get().strip()
         }
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -337,7 +370,10 @@ class App(ctk.CTk):
                 "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
                 "obs_scene": self.entry_obs_scene.get().strip(),
                 "obs_auto_start": self.check_obs_auto_start.get() == 1,
-                "obs_auto_stop": self.check_obs_auto_stop.get() == 1
+                "obs_auto_stop": self.check_obs_auto_stop.get() == 1,
+                "obs_schedule_enabled": self.check_obs_schedule.get() == 1,
+                "obs_schedule_start_time": self.entry_obs_start_time.get().strip(),
+                "obs_schedule_stop_time": self.entry_obs_stop_time.get().strip()
             }
             
             self.entry_lobby.configure(state="disabled")
@@ -349,12 +385,15 @@ class App(ctk.CTk):
             self.check_obs_enabled.configure(state="disabled")
             self.check_obs_auto_start.configure(state="disabled")
             self.check_obs_auto_stop.configure(state="disabled")
+            self.check_obs_schedule.configure(state="disabled")
             self.entry_obs_host.configure(state="disabled")
             self.entry_obs_port.configure(state="disabled")
             self.entry_obs_password.configure(state="disabled")
             self.entry_obs_profile.configure(state="disabled")
             self.entry_obs_scene_collection.configure(state="disabled")
             self.entry_obs_scene.configure(state="disabled")
+            self.entry_obs_start_time.configure(state="disabled")
+            self.entry_obs_stop_time.configure(state="disabled")
             
             self.is_running = True
             self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")

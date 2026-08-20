@@ -22,6 +22,12 @@ class OBSController:
         self.scene = ""
         self.auto_start = True
         self.auto_stop = True
+        self.schedule_enabled = False
+        self.schedule_start_time = ""
+        self.schedule_stop_time = ""
+        self._scheduler_running = False
+        self._last_schedule_start_day = None
+        self._last_schedule_stop_day = None
 
     def configure(self, config_dict: dict):
         """Updates connection parameters and preferences from dictionary."""
@@ -38,6 +44,9 @@ class OBSController:
             self.scene = config_dict.get("obs_scene", "").strip()
             self.auto_start = bool(config_dict.get("obs_auto_start", True))
             self.auto_stop = bool(config_dict.get("obs_auto_stop", True))
+            self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", False))
+            self.schedule_start_time = config_dict.get("obs_schedule_start_time", "").strip()
+            self.schedule_stop_time = config_dict.get("obs_schedule_stop_time", "").strip()
 
     @property
     def is_connected(self) -> bool:
@@ -185,13 +194,88 @@ class OBSController:
                 logger.error(f"[OBS] Failed to stop stream: {e}")
                 return False
 
+    def is_current_time_in_range(self) -> bool:
+        """Checks if the current local time falls within the configured start and stop times."""
+        if not self.schedule_start_time or not self.schedule_stop_time:
+            return True
+        try:
+            from datetime import datetime
+            now = datetime.now().time()
+            start = datetime.strptime(self.schedule_start_time, "%H:%M").time()
+            stop = datetime.strptime(self.schedule_stop_time, "%H:%M").time()
+            if start <= stop:
+                return start <= now <= stop
+            else:
+                # Spans midnight (e.g. 22:00 -> 03:00)
+                return now >= start or now <= stop
+        except Exception as e:
+            logger.warning(f"[OBS Schedule] Time parsing error: {e}")
+            return True
+
+    def start_scheduler(self):
+        """Starts the background schedule monitor thread."""
+        if self._scheduler_running:
+            return
+        self._scheduler_running = True
+
+        def _schedule_loop():
+            logger.info(f"[OBS Schedule] Scheduler active (Start: {self.schedule_start_time or 'Any'}, Stop: {self.schedule_stop_time or 'Any'}).")
+            from datetime import datetime
+            while self._scheduler_running:
+                try:
+                    if self.enabled and self.schedule_enabled:
+                        now_dt = datetime.now()
+                        now_str = now_dt.strftime("%H:%M")
+                        today_str = now_dt.strftime("%Y-%m-%d")
+
+                        # Check scheduled start
+                        if self.schedule_start_time and now_str == self.schedule_start_time:
+                            if self._last_schedule_start_day != today_str:
+                                self._last_schedule_start_day = today_str
+                                logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
+                                def _start_worker():
+                                    if self.profile:
+                                        self.set_profile(self.profile)
+                                        time.sleep(0.5)
+                                    if self.scene_collection:
+                                        self.set_scene_collection(self.scene_collection)
+                                        time.sleep(0.5)
+                                    if self.scene:
+                                        self.set_scene(self.scene)
+                                        time.sleep(0.2)
+                                    self.start_stream()
+                                threading.Thread(target=_start_worker, daemon=True).start()
+
+                        # Check scheduled stop
+                        if self.schedule_stop_time and now_str == self.schedule_stop_time:
+                            if self._last_schedule_stop_day != today_str:
+                                self._last_schedule_stop_day = today_str
+                                logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
+                                threading.Thread(target=self.stop_stream, daemon=True).start()
+
+                except Exception as e:
+                    logger.warning(f"[OBS Schedule] Loop error: {e}")
+
+                time.sleep(10)
+
+        threading.Thread(target=_schedule_loop, daemon=True).start()
+
+    def stop_scheduler(self):
+        """Stops the background schedule monitor loop."""
+        self._scheduler_running = False
+
     def on_game_start(self):
         """
         Triggered when match enters InProgress phase.
         Applies profile, scene collection, scene (if configured), and starts the stream.
+        Respects schedule window if schedule_enabled is True.
         Runs asynchronously in a daemon thread.
         """
         if not self.enabled or not self.auto_start:
+            return
+
+        if self.schedule_enabled and not self.is_current_time_in_range():
+            logger.info(f"[OBS Schedule] Game started but current time is outside scheduled window ({self.schedule_start_time} - {self.schedule_stop_time}). Skipping stream start.")
             return
 
         def _worker():

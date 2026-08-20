@@ -26,6 +26,7 @@ Tool created to automate the process of joining lobbies, managing remakes and ex
 - **OBS Studio integration via WebSocket v5**:
   - Auto-start stream when match begins (`InProgress`).
   - Auto-stop stream on game end, remake or cleanup.
+  - Scheduled streaming by hour (Start/Stop time in `HH:MM` format, with support for windows spanning midnight).
   - Automatic OBS Profile, Scene Collection, and Scene switching.
   - Resilient connection handling (no crash if OBS is offline).
 - Visual interface with real-time status and logs.

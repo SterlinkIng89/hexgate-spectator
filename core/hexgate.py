@@ -557,6 +557,8 @@ def start_bot(callback, config_data):
     obs_controller.configure(config_data)
     if obs_controller.enabled:
         threading.Thread(target=obs_controller.connect, daemon=True).start()
+        if obs_controller.schedule_enabled:
+            obs_controller.start_scheduler()
 
     bot_active = True
     is_searching = True
@@ -577,6 +579,7 @@ def stop_bot():
     is_searching = False
     
     from core.obs_controller import obs_controller
+    obs_controller.stop_scheduler()
     obs_controller.on_game_end()
     obs_controller.disconnect()
     

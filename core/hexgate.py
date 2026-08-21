@@ -11,6 +11,9 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
+import core.lcu_patch
+core.lcu_patch.apply()
+
 from lcu_driver import Connector
 from core.obs_controller import obs_controller
 
@@ -91,7 +94,7 @@ async def get_current_game_time():
     loop = asyncio.get_event_loop()
     def _fetch():
         try:
-            res = requests.get("https://127.0.0.1:2999/liveclientdata/gamestats", verify=False, timeout=2)
+            res = requests.get("https://127.0.0.1:2999/liveclientdata/gamestats", verify=False, timeout=0.5)
             if res.status_code == 200:
                 return res.json().get("gameTime", None)
         except Exception:

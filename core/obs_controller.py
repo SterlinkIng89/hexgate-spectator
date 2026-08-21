@@ -11,6 +11,8 @@ class OBSController:
     Handles connecting, streaming control, scene/profile/collection switching,
     and graceful error recovery when OBS is offline.
     """
+    RECONNECT_COOLDOWN = 10.0  # Minimum seconds between connection retries when OBS is offline
+
     def __init__(self):
         self._client = None
         self._lock = threading.RLock()
@@ -26,9 +28,11 @@ class OBSController:
         self.schedule_enabled = False
         self.schedule_start_time = ""
         self.schedule_stop_time = ""
-        self._scheduler_running = False
+        self._scheduler_thread = None
+        self._stop_scheduler_event = threading.Event()
         self._last_schedule_start_day = None
         self._last_schedule_stop_day = None
+        self._last_connect_attempt = 0.0
 
     def configure(self, config_dict: dict):
         """Updates connection parameters and preferences from dictionary."""
@@ -54,7 +58,7 @@ class OBSController:
         with self._lock:
             return self._client is not None
 
-    def connect(self) -> bool:
+    def connect(self, force: bool = False) -> bool:
         """Attempts to establish a connection to OBS WebSocket server."""
         if not self.enabled:
             return False
@@ -62,16 +66,29 @@ class OBSController:
         with self._lock:
             if self._client is not None:
                 return True
+
+            now = time.time()
+            if not force and (now - self._last_connect_attempt) < self.RECONNECT_COOLDOWN:
+                # Avoid hammering connection attempts within cooldown window
+                return False
+
+            self._last_connect_attempt = now
+            t0 = time.perf_counter()
             try:
                 import obsws_python as obs
                 logger.info(f"[OBS] Connecting to OBS at {self.host}:{self.port}...")
                 client = obs.ReqClient(host=self.host, port=self.port, password=self.password, timeout=3)
                 version = client.get_version()
-                logger.info(f"[OBS] Connected successfully to OBS Studio {version.obs_version} (WebSocket v{version.obs_web_socket_version})")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    f"[OBS] Connected successfully to OBS Studio {version.obs_version} "
+                    f"(WebSocket v{version.obs_web_socket_version}) in {elapsed_ms:.1f}ms"
+                )
                 self._client = client
                 return True
             except Exception as e:
-                logger.warning(f"[OBS] Could not connect to OBS ({self.host}:{self.port}): {e}")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.warning(f"[OBS] Could not connect to OBS ({self.host}:{self.port}) in {elapsed_ms:.1f}ms: {e}")
                 self._client = None
                 return False
 
@@ -96,11 +113,15 @@ class OBSController:
         with self._lock:
             if not self._ensure_connected():
                 return False
+            t0 = time.perf_counter()
             try:
                 getattr(self._client, method)(*args)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.debug(f"[OBS] {method}{args} succeeded in {elapsed_ms:.1f}ms")
                 return True
             except Exception as e:
-                logger.error(f"[OBS] {log_label}: {e}")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.error(f"[OBS] {log_label} ({elapsed_ms:.1f}ms): {e}")
                 return False
 
     def get_stream_status(self) -> dict:
@@ -108,8 +129,11 @@ class OBSController:
         with self._lock:
             if not self._ensure_connected():
                 return {"active": False, "timecode": "", "reconnecting": False, "connected": False}
+            t0 = time.perf_counter()
             try:
                 status = self._client.get_stream_status()
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.debug(f"[OBS] get_stream_status completed in {elapsed_ms:.1f}ms")
                 return {
                     "active": getattr(status, "output_active", False),
                     "timecode": getattr(status, "output_timecode", ""),
@@ -117,7 +141,8 @@ class OBSController:
                     "connected": True
                 }
             except Exception as e:
-                logger.warning(f"[OBS] Error checking stream status: {e}")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.warning(f"[OBS] Error checking stream status ({elapsed_ms:.1f}ms): {e}")
                 self._client = None
                 return {"active": False, "timecode": "", "reconnecting": False, "connected": False}
 
@@ -143,44 +168,50 @@ class OBSController:
         return self._obs_call(f'Failed to switch program scene to "{name}"', "set_current_program_scene", name)
 
     def start_stream(self) -> bool:
-        """Starts streaming in OBS if not already running."""
+        """Starts streaming in OBS directly without redundant pre-flight query."""
         if not self.enabled:
             return False
         with self._lock:
             if not self._ensure_connected():
                 logger.warning("[OBS] Cannot start stream: not connected to OBS.")
                 return False
+            t0 = time.perf_counter()
             try:
-                status = self._client.get_stream_status()
-                if getattr(status, "output_active", False):
-                    logger.info("[OBS] Stream is already active.")
-                    return True
                 logger.info("[OBS] Starting stream...")
                 self._client.start_stream()
-                logger.info("[OBS] Stream started successfully.")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.info(f"[OBS] Stream started successfully in {elapsed_ms:.1f}ms.")
                 return True
             except Exception as e:
-                logger.error(f"[OBS] Failed to start stream: {e}")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                err_str = str(e).lower()
+                if "already active" in err_str or "output_running" in err_str:
+                    logger.info(f"[OBS] Stream is already active ({elapsed_ms:.1f}ms).")
+                    return True
+                logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
                 return False
 
     def stop_stream(self) -> bool:
-        """Stops streaming in OBS if currently running."""
+        """Stops streaming in OBS directly without redundant pre-flight query."""
         if not self.enabled:
             return False
         with self._lock:
             if not self._ensure_connected():
                 return False
+            t0 = time.perf_counter()
             try:
-                status = self._client.get_stream_status()
-                if not getattr(status, "output_active", False):
-                    logger.info("[OBS] Stream is already stopped.")
-                    return True
                 logger.info("[OBS] Stopping stream...")
                 self._client.stop_stream()
-                logger.info("[OBS] Stream stopped successfully.")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.info(f"[OBS] Stream stopped successfully in {elapsed_ms:.1f}ms.")
                 return True
             except Exception as e:
-                logger.error(f"[OBS] Failed to stop stream: {e}")
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                err_str = str(e).lower()
+                if "not active" in err_str or "output_not_running" in err_str:
+                    logger.info(f"[OBS] Stream is already stopped ({elapsed_ms:.1f}ms).")
+                    return True
+                logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
                 return False
 
     def _apply_scene_and_start(self):
@@ -188,16 +219,16 @@ class OBSController:
         Applies the configured profile, scene collection and scene in order,
         then starts the stream. Shared by on_game_start and the scheduler.
         """
+        t0 = time.perf_counter()
         if self.profile:
             self.set_profile(self.profile)
-            time.sleep(0.5)
         if self.scene_collection:
             self.set_scene_collection(self.scene_collection)
-            time.sleep(0.5)
         if self.scene:
             self.set_scene(self.scene)
-            time.sleep(0.2)
         self.start_stream()
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(f"[OBS] _apply_scene_and_start completed in {elapsed_ms:.1f}ms")
 
     def is_current_time_in_range(self) -> bool:
         """Checks if the current local time falls within the configured start and stop times."""
@@ -218,45 +249,50 @@ class OBSController:
 
     def start_scheduler(self):
         """Starts the background schedule monitor thread."""
-        if self._scheduler_running:
-            return
-        self._scheduler_running = True
+        with self._lock:
+            if self._scheduler_thread and self._scheduler_thread.is_alive():
+                return
+            self._stop_scheduler_event.clear()
+            t = threading.Thread(target=self._schedule_loop, daemon=True, name="OBSScheduler")
+            self._scheduler_thread = t
+            t.start()
 
-        def _schedule_loop():
-            logger.info(
-                f"[OBS Schedule] Scheduler active "
-                f"(Start: {self.schedule_start_time or 'Any'}, "
-                f"Stop: {self.schedule_stop_time or 'Any'})."
-            )
-            while self._scheduler_running:
-                try:
-                    if self.enabled and self.schedule_enabled:
-                        now_dt = datetime.now()
-                        now_str = now_dt.strftime("%H:%M")
-                        today_str = now_dt.strftime("%Y-%m-%d")
+    def _schedule_loop(self):
+        """Background loop that fires scheduled start/stop actions at the configured times."""
+        logger.info(
+            f"[OBS Schedule] Scheduler active "
+            f"(Start: {self.schedule_start_time or 'Any'}, "
+            f"Stop: {self.schedule_stop_time or 'Any'})."
+        )
+        while not self._stop_scheduler_event.is_set():
+            try:
+                if self.enabled and self.schedule_enabled:
+                    now_dt = datetime.now()
+                    now_str = now_dt.strftime("%H:%M")
+                    today_str = now_dt.strftime("%Y-%m-%d")
 
-                        if self.schedule_start_time and now_str == self.schedule_start_time:
-                            if self._last_schedule_start_day != today_str:
-                                self._last_schedule_start_day = today_str
-                                logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
-                                threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
+                    if self.schedule_start_time and now_str == self.schedule_start_time:
+                        if self._last_schedule_start_day != today_str:
+                            self._last_schedule_start_day = today_str
+                            logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
+                            threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
 
-                        if self.schedule_stop_time and now_str == self.schedule_stop_time:
-                            if self._last_schedule_stop_day != today_str:
-                                self._last_schedule_stop_day = today_str
-                                logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
-                                threading.Thread(target=self.stop_stream, daemon=True).start()
+                    if self.schedule_stop_time and now_str == self.schedule_stop_time:
+                        if self._last_schedule_stop_day != today_str:
+                            self._last_schedule_stop_day = today_str
+                            logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
+                            threading.Thread(target=self.stop_stream, daemon=True).start()
 
-                except Exception as e:
-                    logger.warning(f"[OBS Schedule] Loop error: {e}")
+            except Exception as e:
+                logger.warning(f"[OBS Schedule] Loop error: {e}")
 
-                time.sleep(10)
+            self._stop_scheduler_event.wait(timeout=10)
 
-        threading.Thread(target=_schedule_loop, daemon=True).start()
+        logger.info("[OBS Schedule] Scheduler thread stopped.")
 
     def stop_scheduler(self):
-        """Stops the background schedule monitor loop."""
-        self._scheduler_running = False
+        """Stops the background schedule monitor loop cleanly."""
+        self._stop_scheduler_event.set()
 
     def on_game_start(self):
         """
@@ -275,11 +311,10 @@ class OBSController:
             return
 
         def _worker():
-            time.sleep(1.0)  # Small pause for game window to stabilize
             if self._ensure_connected():
                 self._apply_scene_and_start()
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="OBSGameStartWorker").start()
 
     def on_game_end(self):
         """
@@ -289,8 +324,9 @@ class OBSController:
         """
         if not self.enabled or not self.auto_stop:
             return
-        threading.Thread(target=self.stop_stream, daemon=True).start()
+        threading.Thread(target=self.stop_stream, daemon=True, name="OBSGameEndWorker").start()
 
 
 # Global singleton instance
 obs_controller = OBSController()
+

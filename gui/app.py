@@ -258,11 +258,15 @@ class App(ctk.CTk):
                 delta = target - now
                 h, rem = divmod(int(delta.total_seconds()), 3600)
                 mins, secs = divmod(rem, 60)
-                self.lbl_countdown.configure(text=f"⏱ Stream starts in: {h:02d}h {mins:02d}m {secs:02d}s")
+                new_text = f"⏱ Stream starts in: {h:02d}h {mins:02d}m {secs:02d}s"
+                if self.lbl_countdown.cget("text") != new_text:
+                    self.lbl_countdown.configure(text=new_text)
             except Exception:
-                self.lbl_countdown.configure(text="")
+                if self.lbl_countdown.cget("text") != "":
+                    self.lbl_countdown.configure(text="")
         else:
-            self.lbl_countdown.configure(text="")
+            if self.lbl_countdown.cget("text") != "":
+                self.lbl_countdown.configure(text="")
         self.after(1000, self._update_countdown)
 
     def _on_toggle_obs_enabled(self):

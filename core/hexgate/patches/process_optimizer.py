@@ -1,18 +1,17 @@
 """
-Patches lcu_driver's process discovery to use a fast, name-only scan.
+Optimizes lcu_driver process discovery using fast, name-only process scanning.
 
 The default lcu_driver implementation calls psutil.process_iter(attrs=["cmdline"])
 which on Windows reads the command-line memory of every running process, including
-protected anti-cheat (Vanguard) and system processes.  This generates hundreds of
+protected anti-cheat (Vanguard) and system processes. This generates hundreds of
 kernel syscalls and holds Python's GIL for hundreds of milliseconds each scan cycle,
 causing UI stuttering and elevated CPU usage.
 
-This module must be imported BEFORE lcu_driver to ensure the patch is applied
-before any lcu_driver internals cache the original reference.
+This module replaces that logic with a lightweight name filter.
 """
 
-import psutil
 from typing import Generator
+import psutil
 
 
 def _fast_return_ux_process() -> Generator[psutil.Process, None, None]:

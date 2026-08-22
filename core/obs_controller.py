@@ -185,7 +185,7 @@ class OBSController:
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 err_str = str(e).lower()
-                if "already active" in err_str or "output_running" in err_str:
+                if "already active" in err_str or "output_running" in err_str or "code 500" in err_str:
                     logger.info(f"[OBS] Stream is already active ({elapsed_ms:.1f}ms).")
                     return True
                 logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
@@ -208,7 +208,7 @@ class OBSController:
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 err_str = str(e).lower()
-                if "not active" in err_str or "output_not_running" in err_str:
+                if "not active" in err_str or "output_not_running" in err_str or "code 501" in err_str:
                     logger.info(f"[OBS] Stream is already stopped ({elapsed_ms:.1f}ms).")
                     return True
                 logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
@@ -220,13 +220,24 @@ class OBSController:
         then starts the stream. Shared by on_game_start and the scheduler.
         """
         t0 = time.perf_counter()
-        if self.profile:
-            self.set_profile(self.profile)
-        if self.scene_collection:
-            self.set_scene_collection(self.scene_collection)
+        
+        status = self.get_stream_status()
+        is_active = status.get("active", False)
+
+        if not is_active:
+            if self.profile:
+                self.set_profile(self.profile)
+            if self.scene_collection:
+                self.set_scene_collection(self.scene_collection)
+                
         if self.scene:
             self.set_scene(self.scene)
-        self.start_stream()
+            
+        if not is_active:
+            self.start_stream()
+        else:
+            logger.info("[OBS] Stream is already active. Skipping start_stream.")
+            
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.info(f"[OBS] _apply_scene_and_start completed in {elapsed_ms:.1f}ms")
 
@@ -323,6 +334,9 @@ class OBSController:
         Runs asynchronously in a daemon thread.
         """
         if not self.enabled or not self.auto_stop:
+            return
+        if self.schedule_enabled and self.is_current_time_in_range():
+            logger.info("[OBS] Skipping auto-stop on game end because schedule window is active.")
             return
         threading.Thread(target=self.stop_stream, daemon=True, name="OBSGameEndWorker").start()
 

@@ -1,7 +1,7 @@
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,9 @@ class OBSController:
         self._last_schedule_start_day = None
         self._last_schedule_stop_day = None
         self._last_connect_attempt = 0.0
+        self.stream_started_at = None
+        self.stream_stopped_at = None
+        self.cached_status = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
 
     def configure(self, config_dict: dict):
         """Updates connection parameters and preferences from dictionary."""
@@ -124,27 +127,50 @@ class OBSController:
                 logger.error(f"[OBS] {log_label} ({elapsed_ms:.1f}ms): {e}")
                 return False
 
+    def _mark_stream_started(self):
+        """Thread-safe helper to record stream start timestamp and update cache atomically."""
+        if not self.stream_started_at:
+            self.stream_started_at = datetime.now()
+        self.cached_status = {**self.cached_status, "active": True}
+
+    def _mark_stream_stopped(self):
+        """Thread-safe helper to record stream stop timestamp and update cache atomically."""
+        self.stream_stopped_at = datetime.now()
+        self.stream_started_at = None
+        self.cached_status = {**self.cached_status, "active": False}
+
     def get_stream_status(self) -> dict:
-        """Returns dictionary with current stream state."""
+        """Returns dictionary with current stream state and updates cached status."""
         with self._lock:
             if not self._ensure_connected():
-                return {"active": False, "timecode": "", "reconnecting": False, "connected": False}
+                res = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
+                self.cached_status = res
+                return res
             t0 = time.perf_counter()
             try:
                 status = self._client.get_stream_status()
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.debug(f"[OBS] get_stream_status completed in {elapsed_ms:.1f}ms")
-                return {
-                    "active": getattr(status, "output_active", False),
+                is_active = getattr(status, "output_active", False)
+                res = {
+                    "active": is_active,
                     "timecode": getattr(status, "output_timecode", ""),
                     "reconnecting": getattr(status, "output_reconnecting", False),
                     "connected": True
                 }
+                if is_active:
+                    self._mark_stream_started()
+                elif self.cached_status.get("active", False):
+                    self._mark_stream_stopped()
+                self.cached_status = res
+                return res
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.warning(f"[OBS] Error checking stream status ({elapsed_ms:.1f}ms): {e}")
                 self._client = None
-                return {"active": False, "timecode": "", "reconnecting": False, "connected": False}
+                res = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
+                self.cached_status = res
+                return res
 
     def set_profile(self, name: str) -> bool:
         """Switches the current OBS Profile."""
@@ -181,12 +207,14 @@ class OBSController:
                 self._client.start_stream()
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(f"[OBS] Stream started successfully in {elapsed_ms:.1f}ms.")
+                self._mark_stream_started()
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 err_str = str(e).lower()
                 if "already active" in err_str or "output_running" in err_str or "code 500" in err_str:
                     logger.info(f"[OBS] Stream is already active ({elapsed_ms:.1f}ms).")
+                    self._mark_stream_started()
                     return True
                 logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
                 return False
@@ -204,12 +232,14 @@ class OBSController:
                 self._client.stop_stream()
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(f"[OBS] Stream stopped successfully in {elapsed_ms:.1f}ms.")
+                self._mark_stream_stopped()
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 err_str = str(e).lower()
                 if "not active" in err_str or "output_not_running" in err_str or "code 501" in err_str:
                     logger.info(f"[OBS] Stream is already stopped ({elapsed_ms:.1f}ms).")
+                    self._mark_stream_stopped()
                     return True
                 logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
                 return False
@@ -269,7 +299,7 @@ class OBSController:
             t.start()
 
     def _schedule_loop(self):
-        """Background loop that fires scheduled start/stop actions at the configured times."""
+        """Background loop that fires scheduled start/stop actions and polls stream state."""
         logger.info(
             f"[OBS Schedule] Scheduler active "
             f"(Start: {self.schedule_start_time or 'Any'}, "
@@ -277,33 +307,144 @@ class OBSController:
         )
         while not self._stop_scheduler_event.is_set():
             try:
-                if self.enabled and self.schedule_enabled:
-                    now_dt = datetime.now()
-                    now_str = now_dt.strftime("%H:%M")
-                    today_str = now_dt.strftime("%Y-%m-%d")
+                if self.enabled:
+                    if self._client is not None:
+                        self.get_stream_status()
 
-                    if self.schedule_start_time and now_str == self.schedule_start_time:
-                        if self._last_schedule_start_day != today_str:
-                            self._last_schedule_start_day = today_str
-                            logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
-                            threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
+                    if self.schedule_enabled:
+                        now_dt = datetime.now()
+                        now_str = now_dt.strftime("%H:%M")
+                        today_str = now_dt.strftime("%Y-%m-%d")
 
-                    if self.schedule_stop_time and now_str == self.schedule_stop_time:
-                        if self._last_schedule_stop_day != today_str:
-                            self._last_schedule_stop_day = today_str
-                            logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
-                            threading.Thread(target=self.stop_stream, daemon=True).start()
+                        if self.schedule_start_time and now_str == self.schedule_start_time:
+                            if self._last_schedule_start_day != today_str:
+                                self._last_schedule_start_day = today_str
+                                logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
+                                threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
+
+                        if self.schedule_stop_time and now_str == self.schedule_stop_time:
+                            if self._last_schedule_stop_day != today_str:
+                                self._last_schedule_stop_day = today_str
+                                logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
+                                threading.Thread(target=self.stop_stream, daemon=True).start()
 
             except Exception as e:
                 logger.warning(f"[OBS Schedule] Loop error: {e}")
 
-            self._stop_scheduler_event.wait(timeout=10)
+            self._stop_scheduler_event.wait(timeout=2)
 
         logger.info("[OBS Schedule] Scheduler thread stopped.")
 
     def stop_scheduler(self):
         """Stops the background schedule monitor loop cleanly."""
         self._stop_scheduler_event.set()
+
+    def get_status_summary(self, is_bot_running: bool = False) -> dict:
+        """Returns thread-safe formatted status summary for the GUI header indicator."""
+        with self._lock:
+            if not self.enabled:
+                return {
+                    "state": "Disabled",
+                    "color": "#7f8c8d",
+                    "label": "Stream: Disabled",
+                    "detail": "OBS integration disabled in settings",
+                }
+
+            is_active = self.cached_status.get("active", False)
+            timecode = self.cached_status.get("timecode", "")
+
+            # If stream is actively transmitting
+            if is_active:
+                start_str = self.stream_started_at.strftime("%I:%M %p") if self.stream_started_at else ""
+                duration_str = timecode
+                if not duration_str and self.stream_started_at:
+                    elapsed = int((datetime.now() - self.stream_started_at).total_seconds())
+                    h, rem = divmod(elapsed, 3600)
+                    m, s = divmod(rem, 60)
+                    duration_str = f"{h:02d}:{m:02d}:{s:02d}"
+
+                detail = f"Live: {duration_str}" if duration_str else "Live streaming in progress"
+                if start_str:
+                    detail += f" (Started at {start_str})"
+
+                return {
+                    "state": "Live",
+                    "color": "#2ecc71",
+                    "label": "Stream: Live",
+                    "detail": detail,
+                }
+
+            # If schedule is enabled
+            if self.schedule_enabled and self.schedule_start_time:
+                now_dt = datetime.now()
+                try:
+                    start_t = datetime.strptime(self.schedule_start_time, "%H:%M").time()
+                    stop_t = datetime.strptime(self.schedule_stop_time, "%H:%M").time() if self.schedule_stop_time else None
+                    start_12h = start_t.strftime("%I:%M %p")
+                    stop_12h = stop_t.strftime("%I:%M %p") if stop_t else "Open"
+
+                    # Check if inside window
+                    if self.is_current_time_in_range():
+                        detail = f"Active window ({start_12h} - {stop_12h})"
+                        if is_bot_running and self.auto_start:
+                            detail += " • Waiting for match"
+                        return {
+                            "state": "Standby",
+                            "color": "#3498db",
+                            "label": "Stream: In Window",
+                            "detail": detail,
+                        }
+
+                    # Outside window: compute countdown to start
+                    target = now_dt.replace(hour=start_t.hour, minute=start_t.minute, second=0, microsecond=0)
+                    if target <= now_dt:
+                        target += timedelta(days=1)
+                    delta = target - now_dt
+                    h, rem = divmod(int(delta.total_seconds()), 3600)
+                    m, s = divmod(rem, 60)
+                    
+                    return {
+                        "state": "Scheduled",
+                        "color": "#f1c40f",
+                        "label": "Stream: Scheduled",
+                        "detail": f"Starts in {h:02d}h {m:02d}m {s:02d}s (Window: {start_12h} - {stop_12h})",
+                    }
+                except Exception as e:
+                    logger.debug(f"Error calculating schedule summary: {e}")
+
+            # If bot is running without schedule
+            if is_bot_running:
+                if self.auto_start:
+                    return {
+                        "state": "Standby",
+                        "color": "#3498db",
+                        "label": "Stream: Standby",
+                        "detail": "Auto-starts when game begins",
+                    }
+                else:
+                    return {
+                        "state": "Offline",
+                        "color": "#7f8c8d",
+                        "label": "Stream: Offline",
+                        "detail": "Auto-start disabled",
+                    }
+
+            # Bot not running, not streaming
+            if self.stream_stopped_at:
+                stopped_str = self.stream_stopped_at.strftime("%I:%M %p")
+                return {
+                    "state": "Stopped",
+                    "color": "#e74c3c",
+                    "label": "Stream: Stopped",
+                    "detail": f"Last stream stopped at {stopped_str}",
+                }
+
+            return {
+                "state": "Ready",
+                "color": "#7f8c8d",
+                "label": "Stream: Ready",
+                "detail": "Start bot to begin monitoring",
+            }
 
     def on_game_start(self):
         """

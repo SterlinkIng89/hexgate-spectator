@@ -11,6 +11,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from core.hexgate import start_bot, stop_bot
+from core.obs_controller import obs_controller
 
 # User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
@@ -63,27 +64,58 @@ class App(ctk.CTk):
 
         # Fonts
         title_font = ctk.CTkFont(family="Roboto", size=24, weight="bold")
-        status_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
+        status_font = ctk.CTkFont(family="Roboto", size=15, weight="bold")
         section_font = ctk.CTkFont(family="Roboto", size=14, weight="bold")
         label_font = ctk.CTkFont(family="Roboto", size=13)
+        sub_font = ctk.CTkFont(family="Roboto", size=12)
         btn_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
 
         # --- UI Layout ---
         
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.top_frame.pack(pady=(15, 5), padx=20, fill="x")
+        self.top_frame.pack(pady=(12, 4), padx=25, fill="x")
         
         self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=title_font)
-        self.title_label.pack(pady=(5, 2))
+        self.title_label.pack(pady=(0, 6))
         
-        self.status_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent")
-        self.status_frame.pack(pady=(0, 5))
+        # Status Cards Container (2 distinct bordered cards, 50% width each)
+        self.status_container = ctk.CTkFrame(self.top_frame, fg_color="transparent")
+        self.status_container.pack(pady=(0, 4), fill="x")
         
-        self.status_dot = ctk.CTkLabel(self.status_frame, text="●", font=ctk.CTkFont(family="Roboto", size=14, weight="bold"), text_color="#e74c3c")
-        self.status_dot.pack(side="left", padx=(0, 6), pady=(0, 2))
+        self.status_container.columnconfigure(0, weight=1, uniform="status_cards")
+        self.status_container.columnconfigure(1, weight=1, uniform="status_cards")
         
-        self.status_label = ctk.CTkLabel(self.status_frame, text="Status: Stopped", font=status_font, text_color="#e74c3c")
-        self.status_label.pack(side="left")
+        # Left Card: LoL Bot Status
+        self.bot_card = ctk.CTkFrame(self.status_container, fg_color="#1e1e1e", border_width=1, border_color="#333333", corner_radius=8)
+        self.bot_card.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
+        
+        self.bot_status_header = ctk.CTkFrame(self.bot_card, fg_color="transparent")
+        self.bot_status_header.pack(pady=(8, 1))
+        
+        self.bot_status_dot = ctk.CTkLabel(self.bot_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#e74c3c")
+        self.bot_status_dot.pack(side="left", padx=(0, 6))
+        
+        self.bot_status_label = ctk.CTkLabel(self.bot_status_header, text="Bot: Stopped", font=status_font, text_color="#e74c3c")
+        self.bot_status_label.pack(side="left")
+        
+        self.bot_detail_label = ctk.CTkLabel(self.bot_card, text="Spectator service offline", font=sub_font, text_color="#888888", anchor="center")
+        self.bot_detail_label.pack(pady=(0, 8), padx=8, fill="x")
+        
+        # Right Card: OBS / Stream Status
+        self.stream_card = ctk.CTkFrame(self.status_container, fg_color="#1e1e1e", border_width=1, border_color="#333333", corner_radius=8)
+        self.stream_card.grid(row=0, column=1, padx=(5, 0), sticky="nsew")
+        
+        self.stream_status_header = ctk.CTkFrame(self.stream_card, fg_color="transparent")
+        self.stream_status_header.pack(pady=(8, 1))
+        
+        self.stream_status_dot = ctk.CTkLabel(self.stream_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#7f8c8d")
+        self.stream_status_dot.pack(side="left", padx=(0, 6))
+        
+        self.stream_status_label = ctk.CTkLabel(self.stream_status_header, text="Stream: Ready", font=status_font, text_color="#7f8c8d")
+        self.stream_status_label.pack(side="left")
+        
+        self.stream_detail_label = ctk.CTkLabel(self.stream_card, text="Start bot to begin monitoring", font=sub_font, text_color="#888888", anchor="center")
+        self.stream_detail_label.pack(pady=(0, 8), padx=8, fill="x")
         
         # --- LoL Client Settings Frame ---
         self.config_frame = ctk.CTkFrame(self, border_width=1, border_color="#333333")
@@ -182,10 +214,6 @@ class App(ctk.CTk):
         self.combo_stop_ampm = ctk.CTkComboBox(stop_time_frame, values=["AM", "PM"], width=58, font=label_font)
         self.combo_stop_ampm.pack(side="left")
 
-        # --- Countdown label ---
-        self.lbl_countdown = ctk.CTkLabel(self.obs_frame, text="", font=label_font, text_color="#f1c40f")
-        self.lbl_countdown.grid(row=6, column=0, columnspan=4, padx=10, pady=(2, 6), sticky="w")
-
         # Widget lists — used by _on_toggle_* and toggle_bot to avoid
         # manually listing every widget in multiple places.
         self._lol_widgets = [
@@ -209,7 +237,7 @@ class App(ctk.CTk):
         self.log_box.pack(pady=(5, 15), padx=25, fill="both", expand=True)
 
         self.after(100, self.process_log_queue)
-        self.after(1000, self._update_countdown)
+        self.after(500, self._update_stream_indicator)
 
         # Load saved config (if exists)
         self.load_config()
@@ -237,37 +265,18 @@ class App(ctk.CTk):
         except Exception:
             return "06", "00", "AM"
 
-    def _update_countdown(self):
-        """Called every second. Shows time remaining until scheduled stream start."""
-        if self.check_obs_enabled.get() == 1 and self.check_obs_schedule.get() == 1:
-            import datetime as dt
-            try:
-                start_24h = self._to_24h(
-                    self.combo_start_hour.get(),
-                    self.combo_start_min.get(),
-                    self.combo_start_ampm.get()
-                )
-                now = dt.datetime.now()
-                target = now.replace(
-                    hour=int(start_24h.split(":")[0]),
-                    minute=int(start_24h.split(":")[1]),
-                    second=0, microsecond=0
-                )
-                if target <= now:
-                    target += dt.timedelta(days=1)
-                delta = target - now
-                h, rem = divmod(int(delta.total_seconds()), 3600)
-                mins, secs = divmod(rem, 60)
-                new_text = f"⏱ Stream starts in: {h:02d}h {mins:02d}m {secs:02d}s"
-                if self.lbl_countdown.cget("text") != new_text:
-                    self.lbl_countdown.configure(text=new_text)
-            except Exception:
-                if self.lbl_countdown.cget("text") != "":
-                    self.lbl_countdown.configure(text="")
-        else:
-            if self.lbl_countdown.cget("text") != "":
-                self.lbl_countdown.configure(text="")
-        self.after(1000, self._update_countdown)
+    def _update_stream_indicator(self):
+        """Called every second to refresh the header stream indicator and status details."""
+        summary = obs_controller.get_status_summary(is_bot_running=self.is_running)
+
+        if self.stream_status_dot.cget("text_color") != summary["color"]:
+            self.stream_status_dot.configure(text_color=summary["color"])
+        if self.stream_status_label.cget("text") != summary["label"]:
+            self.stream_status_label.configure(text=summary["label"], text_color=summary["color"])
+        if self.stream_detail_label.cget("text") != summary["detail"]:
+            self.stream_detail_label.configure(text=summary["detail"])
+
+        self.after(1000, self._update_stream_indicator)
 
     def _on_toggle_obs_enabled(self):
         """Updates OBS entry states depending on whether OBS integration is enabled."""
@@ -276,15 +285,14 @@ class App(ctk.CTk):
             w.configure(state=state)
         self._on_toggle_obs_schedule()
 
-
     def _on_toggle_obs_schedule(self):
-        """Enables/disables schedule picker widgets and clears countdown when inactive."""
+        """Enables/disables schedule picker widgets and syncs config to controller."""
         schedule_active = (self.check_obs_enabled.get() == 1 and self.check_obs_schedule.get() == 1)
         sched_state = "normal" if schedule_active else "disabled"
         for w in self._schedule_picker_widgets:
             w.configure(state=sched_state)
-        if not schedule_active:
-            self.lbl_countdown.configure(text="")
+        if not self.is_running:
+            obs_controller.configure(self._build_obs_config())
 
     def load_config(self):
         """Loads configuration from config.json and initializes fields."""
@@ -364,6 +372,7 @@ class App(ctk.CTk):
         self.combo_stop_ampm.set(eampm)
 
         self._on_toggle_obs_enabled()
+        obs_controller.configure(self._build_obs_config())
 
     def _build_obs_config(self) -> dict:
         """Single source of truth for the current OBS widget state as a config dict."""
@@ -438,22 +447,35 @@ class App(ctk.CTk):
             self.log_box.configure(state="disabled")
         self.after(100, self.process_log_queue)
 
+    _STATUS_PATTERNS = [
+        (("in progress",), "#3498db", "In Match", "Spectating game in progress"),
+        (("searching",), "#3498db", "Searching", None),
+        (("waiting for invitation",), "#3498db", "Waiting Invite", "Invite only mode active"),
+        (("starting",), "#3498db", "Starting", None),
+        (("switch", "mov", "waiting for lcu", "finding match"), "#f1c40f", "Connecting", None),
+        (("stop", "end of game", "quit", "error"), "#e74c3c", "Stopped", "Spectator service offline"),
+        (("lobby", "connected", "accepted", "champ"), "#2ecc71", "In Lobby", None),
+    ]
+
     def update_status(self, text):
         text_lower = text.lower()
-        if "in progress" in text_lower or "searching" in text_lower or "waiting for invitation" in text_lower or "starting" in text_lower:
-            color = "#3498db" # Blue
-        elif "switch" in text_lower or "mov" in text_lower or "waiting for lcu" in text_lower or "finding match" in text_lower:
-            color = "#f1c40f" # Yellow
-        elif "stop" in text_lower or "end of game" in text_lower or "quit" in text_lower or "error" in text_lower:
-            color = "#e74c3c" # Red
-        elif "lobby" in text_lower or "connected" in text_lower or "accepted" in text_lower:
-            color = "#2ecc71" # Green
-        else:
-            color = "#ffffff"
-            
+        color = "#ffffff"
+        status_title = text
+        detail = "LCU client active"
+
+        for keywords, c, title, det in self._STATUS_PATTERNS:
+            if any(kw in text_lower for kw in keywords):
+                color = c
+                status_title = title
+                detail = det if det is not None else text
+                if "error" in text_lower:
+                    detail = text
+                break
+
         def _apply():
-            self.status_dot.configure(text_color=color)
-            self.status_label.configure(text=f"Status: {text}", text_color=color)
+            self.bot_status_dot.configure(text_color=color)
+            self.bot_status_label.configure(text=f"Bot: {status_title}", text_color=color)
+            self.bot_detail_label.configure(text=detail)
 
         self.after(0, _apply)
 
@@ -487,12 +509,16 @@ class App(ctk.CTk):
 
             self.is_running = True
             self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")
+            self.bot_status_dot.configure(text_color="#3498db")
+            self.bot_status_label.configure(text="Bot: Starting", text_color="#3498db")
+            self.bot_detail_label.configure(text="Initializing spectator bot...")
             start_bot(self.update_status, config_data)
         else:
             self.is_running = False
             self.btn_toggle.configure(text="Start Bot", fg_color=["#3a7ebf", "#1f538d"], hover_color=["#325882", "#14375e"])
-            self.status_dot.configure(text_color="#e74c3c")
-            self.status_label.configure(text="Status: Stopped", text_color="#e74c3c")
+            self.bot_status_dot.configure(text_color="#e74c3c")
+            self.bot_status_label.configure(text="Bot: Stopped", text_color="#e74c3c")
+            self.bot_detail_label.configure(text="Spectator service offline")
 
             for w in self._lol_widgets:
                 w.configure(state="normal")

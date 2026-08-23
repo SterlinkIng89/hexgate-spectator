@@ -8,12 +8,12 @@ import customtkinter as ctk
 
 # ASCII Artwork & Branding — replace these lines to update the logo/icon (Issue #32)
 ASCII_ICON = [
-    "  ▛▀▀▀▀▀▀▀▀▀▀▀▜",
-    "  ▌           ▐",
-    "  ▌   [ P ]   ▐",
-    "  ▌   (#32)   ▐",
-    "  ▌           ▐",
-    "  ▙▄▄▄▄▄▄▄▄▄▄▄▟",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
 ]
 
 ASCII_TITLE = [
@@ -25,7 +25,7 @@ ASCII_TITLE = [
     "    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝",
 ]
 
-ASCII_SUBTITLE = "                                       S P E C T A T O R"
+ASCII_SUBTITLE = "                     S P E C T A T O R"
 
 # Atomic palette — change a color here to update all roles that share it.
 _PALETTE = {

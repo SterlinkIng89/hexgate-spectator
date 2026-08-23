@@ -266,6 +266,10 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
         self.log_box.pack(pady=(2, 6), padx=25, fill="both", expand=True)
 
+        # Configure tags for visual session dividers
+        self.log_box._textbox.tag_config("session_start", foreground="#5dade2")
+        self.log_box._textbox.tag_config("session_stop", foreground="#e67e22")
+
         # Render ASCII banner and initial system info
         render_startup_banner(self.log_box, version=APP_VERSION)
 
@@ -539,7 +543,13 @@ class App(ctk.CTk):
         while not self.log_queue.empty():
             msg = self.log_queue.get()
             self.log_box.configure(state="normal")
-            self.log_box.insert("end", msg + "\n")
+            tk_text = self.log_box._textbox
+            if "[Session Started:" in msg:
+                tk_text.insert("end", f"\n{msg}\n", "session_start")
+            elif "[Session Stopped:" in msg:
+                tk_text.insert("end", f"{msg}\n\n", "session_stop")
+            else:
+                tk_text.insert("end", msg + "\n")
             self.log_box.see("end")
             self.log_box.configure(state="disabled")
         self.after(100, self.process_log_queue)

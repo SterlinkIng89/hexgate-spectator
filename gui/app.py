@@ -31,6 +31,38 @@ class TextboxHandler(logging.Handler):
         msg = self.format(record)
         self.log_queue.put(msg)
 
+class CollapsibleFrame(ctk.CTkFrame):
+    def __init__(self, master, title: str, **kwargs):
+        super().__init__(master, **kwargs)
+        self.title_text = title
+        self.is_collapsed = False
+
+        self.header_btn = ctk.CTkButton(
+            self,
+            text=f"▼  {self.title_text}",
+            anchor="w",
+            fg_color="transparent",
+            hover_color="#2b2b2b",
+            text_color="#ffffff",
+            font=ctk.CTkFont(family="Roboto", size=14, weight="bold"),
+            height=28,
+            command=self.toggle
+        )
+        self.header_btn.pack(fill="x", padx=8, pady=(6, 4))
+
+        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
+
+    def toggle(self):
+        if self.is_collapsed:
+            self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
+            self.header_btn.configure(text=f"▼  {self.title_text}")
+            self.is_collapsed = False
+        else:
+            self.content_frame.pack_forget()
+            self.header_btn.configure(text=f"▶  {self.title_text}")
+            self.is_collapsed = True
+
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
         "obs_enabled": 0,
@@ -118,80 +150,80 @@ class App(ctk.CTk):
         self.stream_detail_label.pack(pady=(0, 8), padx=8, fill="x")
         
         # --- LoL Client Settings Frame ---
-        self.config_frame = ctk.CTkFrame(self, border_width=1, border_color="#333333")
+        self.config_frame = CollapsibleFrame(self, title="League Client Settings", border_width=1, border_color="#333333")
         self.config_frame.pack(pady=5, padx=25, fill="x")
         
-        self.config_frame.columnconfigure(0, weight=1)
-        self.config_frame.columnconfigure(1, weight=1)
-        self.config_frame.columnconfigure(2, weight=1)
-        self.config_frame.columnconfigure(3, weight=1)
+        self.config_frame.content_frame.columnconfigure(0, weight=1)
+        self.config_frame.content_frame.columnconfigure(1, weight=1)
+        self.config_frame.content_frame.columnconfigure(2, weight=1)
+        self.config_frame.content_frame.columnconfigure(3, weight=1)
         
-        ctk.CTkLabel(self.config_frame, text="Lobby Name(s):", font=label_font).grid(row=0, column=0, padx=10, pady=4, sticky="w")
-        self.entry_lobby = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: est, vks", font=label_font, width=140)
+        ctk.CTkLabel(self.config_frame.content_frame, text="Lobby Name(s):", font=label_font).grid(row=0, column=0, padx=10, pady=4, sticky="w")
+        self.entry_lobby = ctk.CTkEntry(self.config_frame.content_frame, placeholder_text="e.g.: est, vks", font=label_font, width=140)
         self.entry_lobby.grid(row=0, column=1, padx=10, pady=4, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Passwords:", font=label_font).grid(row=0, column=2, padx=10, pady=4, sticky="w")
-        self.entry_passwords = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: 123, test", font=label_font, width=140)
+        ctk.CTkLabel(self.config_frame.content_frame, text="Passwords:", font=label_font).grid(row=0, column=2, padx=10, pady=4, sticky="w")
+        self.entry_passwords = ctk.CTkEntry(self.config_frame.content_frame, placeholder_text="e.g.: 123, test", font=label_font, width=140)
         self.entry_passwords.grid(row=0, column=3, padx=10, pady=4, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Camera Delay (s):", font=label_font).grid(row=1, column=0, padx=10, pady=4, sticky="w")
-        self.entry_delay = ctk.CTkEntry(self.config_frame, font=label_font, width=140)
+        ctk.CTkLabel(self.config_frame.content_frame, text="Camera Delay (s):", font=label_font).grid(row=1, column=0, padx=10, pady=4, sticky="w")
+        self.entry_delay = ctk.CTkEntry(self.config_frame.content_frame, font=label_font, width=140)
         self.entry_delay.grid(row=1, column=1, padx=10, pady=4, sticky="we")
         
-        ctk.CTkLabel(self.config_frame, text="Ignored Words:", font=label_font).grid(row=1, column=2, padx=10, pady=4, sticky="w")
-        self.entry_ignored = ctk.CTkEntry(self.config_frame, placeholder_text="e.g.: Academy, AC", font=label_font, width=140)
+        ctk.CTkLabel(self.config_frame.content_frame, text="Ignored Words:", font=label_font).grid(row=1, column=2, padx=10, pady=4, sticky="w")
+        self.entry_ignored = ctk.CTkEntry(self.config_frame.content_frame, placeholder_text="e.g.: Academy, AC", font=label_font, width=140)
         self.entry_ignored.grid(row=1, column=3, padx=10, pady=4, sticky="we")
         
-        self.check_invite_only = ctk.CTkSwitch(self.config_frame, text="Invite Only Mode (Don't search)", font=label_font)
+        self.check_invite_only = ctk.CTkSwitch(self.config_frame.content_frame, text="Invite Only Mode (Don't search)", font=label_font)
         self.check_invite_only.grid(row=2, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
         # --- OBS Integration Settings Frame ---
-        self.obs_frame = ctk.CTkFrame(self, border_width=1, border_color="#333333")
+        self.obs_frame = CollapsibleFrame(self, title="OBS Integration Settings", border_width=1, border_color="#333333")
         self.obs_frame.pack(pady=5, padx=25, fill="x")
 
-        self.obs_frame.columnconfigure(0, weight=1)
-        self.obs_frame.columnconfigure(1, weight=1)
-        self.obs_frame.columnconfigure(2, weight=1)
-        self.obs_frame.columnconfigure(3, weight=1)
+        self.obs_frame.content_frame.columnconfigure(0, weight=1)
+        self.obs_frame.content_frame.columnconfigure(1, weight=1)
+        self.obs_frame.content_frame.columnconfigure(2, weight=1)
+        self.obs_frame.content_frame.columnconfigure(3, weight=1)
 
-        self.check_obs_enabled = ctk.CTkSwitch(self.obs_frame, text="Enable OBS Integration", font=section_font, command=self._on_toggle_obs_enabled)
+        self.check_obs_enabled = ctk.CTkSwitch(self.obs_frame.content_frame, text="Enable OBS Integration", font=section_font, command=self._on_toggle_obs_enabled)
         self.check_obs_enabled.grid(row=0, column=0, columnspan=2, padx=10, pady=6, sticky="w")
 
-        self.check_obs_auto_start = ctk.CTkCheckBox(self.obs_frame, text="Auto-start stream", font=label_font)
+        self.check_obs_auto_start = ctk.CTkCheckBox(self.obs_frame.content_frame, text="Auto-start stream", font=label_font)
         self.check_obs_auto_start.grid(row=0, column=2, padx=10, pady=6, sticky="w")
 
-        self.check_obs_auto_stop = ctk.CTkCheckBox(self.obs_frame, text="Auto-stop stream", font=label_font)
+        self.check_obs_auto_stop = ctk.CTkCheckBox(self.obs_frame.content_frame, text="Auto-stop stream", font=label_font)
         self.check_obs_auto_stop.grid(row=0, column=3, padx=10, pady=6, sticky="w")
 
-        ctk.CTkLabel(self.obs_frame, text="OBS Host:", font=label_font).grid(row=1, column=0, padx=10, pady=4, sticky="w")
-        self.entry_obs_host = ctk.CTkEntry(self.obs_frame, placeholder_text="localhost", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="OBS Host:", font=label_font).grid(row=1, column=0, padx=10, pady=4, sticky="w")
+        self.entry_obs_host = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="localhost", font=label_font, width=140)
         self.entry_obs_host.grid(row=1, column=1, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.obs_frame, text="OBS Port:", font=label_font).grid(row=1, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_port = ctk.CTkEntry(self.obs_frame, placeholder_text="4455", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="OBS Port:", font=label_font).grid(row=1, column=2, padx=10, pady=4, sticky="w")
+        self.entry_obs_port = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="4455", font=label_font, width=140)
         self.entry_obs_port.grid(row=1, column=3, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.obs_frame, text="OBS Password:", font=label_font).grid(row=2, column=0, padx=10, pady=4, sticky="w")
-        self.entry_obs_password = ctk.CTkEntry(self.obs_frame, placeholder_text="Optional password", show="*", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="OBS Password:", font=label_font).grid(row=2, column=0, padx=10, pady=4, sticky="w")
+        self.entry_obs_password = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="Optional password", show="*", font=label_font, width=140)
         self.entry_obs_password.grid(row=2, column=1, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.obs_frame, text="OBS Profile:", font=label_font).grid(row=2, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_profile = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: Scrims", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="OBS Profile:", font=label_font).grid(row=2, column=2, padx=10, pady=4, sticky="w")
+        self.entry_obs_profile = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="e.g.: Scrims", font=label_font, width=140)
         self.entry_obs_profile.grid(row=2, column=3, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.obs_frame, text="Scene Collection:", font=label_font).grid(row=3, column=0, padx=10, pady=4, sticky="w")
-        self.entry_obs_scene_collection = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: Scrims Layout", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="Scene Collection:", font=label_font).grid(row=3, column=0, padx=10, pady=4, sticky="w")
+        self.entry_obs_scene_collection = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="e.g.: Scrims Layout", font=label_font, width=140)
         self.entry_obs_scene_collection.grid(row=3, column=1, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.obs_frame, text="Active Scene:", font=label_font).grid(row=3, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_scene = ctk.CTkEntry(self.obs_frame, placeholder_text="e.g.: InGame", font=label_font, width=140)
+        ctk.CTkLabel(self.obs_frame.content_frame, text="Active Scene:", font=label_font).grid(row=3, column=2, padx=10, pady=4, sticky="w")
+        self.entry_obs_scene = ctk.CTkEntry(self.obs_frame.content_frame, placeholder_text="e.g.: InGame", font=label_font, width=140)
         self.entry_obs_scene.grid(row=3, column=3, padx=10, pady=4, sticky="we")
 
-        self.check_obs_schedule = ctk.CTkSwitch(self.obs_frame, text="Schedule Stream by Time", font=label_font, command=self._on_toggle_obs_schedule)
+        self.check_obs_schedule = ctk.CTkSwitch(self.obs_frame.content_frame, text="Schedule Stream by Time", font=label_font, command=self._on_toggle_obs_schedule)
         self.check_obs_schedule.grid(row=4, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
         # --- Start time pickers (12h + AM/PM) ---
-        start_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
+        start_time_frame = ctk.CTkFrame(self.obs_frame.content_frame, fg_color="transparent")
         start_time_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(2, 8), sticky="w")
 
         ctk.CTkLabel(start_time_frame, text="Stream Start:", font=label_font).pack(side="left", padx=(0, 8))
@@ -210,7 +242,7 @@ class App(ctk.CTk):
         self.combo_start_ampm.pack(side="left")
 
         # --- Stop time pickers (12h + AM/PM) ---
-        stop_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
+        stop_time_frame = ctk.CTkFrame(self.obs_frame.content_frame, fg_color="transparent")
         stop_time_frame.grid(row=5, column=2, columnspan=2, padx=10, pady=(2, 8), sticky="w")
 
         ctk.CTkLabel(stop_time_frame, text="Stream Stop:", font=label_font).pack(side="left", padx=(0, 8))

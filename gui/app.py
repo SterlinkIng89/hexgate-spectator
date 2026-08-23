@@ -74,7 +74,7 @@ class App(ctk.CTk):
         "obs_scene": "",
         "obs_auto_start": 1,
         "obs_auto_stop": 1,
-        "obs_schedule_enabled": 0,
+        "obs_schedule_enabled": 1,
         "obs_schedule_start_time": "10:00",
         "obs_schedule_stop_time": "16:00",
     }

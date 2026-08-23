@@ -3,6 +3,24 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+# Silence third-party traceback dumps when OBS is offline
+def silence_external_loggers():
+    """Suppresses verbose internal tracebacks from third-party libraries (obsws-python, websocket)."""
+    for name in ("obsws_python", "obsws_python.baseclient", "obsws_python.reqs", "websocket"):
+        logging.getLogger(name).setLevel(logging.CRITICAL)
+
+silence_external_loggers()
+
+def _is_obs_unreachable_error(e: Exception) -> bool:
+    """Returns True if the exception indicates OBS is closed, refusing connections, or unreachable."""
+    err_msg = str(e).lower()
+    return (
+        isinstance(e, (ConnectionRefusedError, TimeoutError, ConnectionError, OSError))
+        or "10061" in err_msg
+        or "refused" in err_msg
+        or "timed out" in err_msg
+    )
+
 logger = logging.getLogger(__name__)
 
 class OBSController:
@@ -80,6 +98,8 @@ class OBSController:
             t0 = time.perf_counter()
             try:
                 import obsws_python as obs
+                silence_external_loggers()
+
                 logger.info(f"[OBS] Connecting to OBS at {self.host}:{self.port}...")
                 client = obs.ReqClient(host=self.host, port=self.port, password=self.password, timeout=3)
                 version = client.get_version()
@@ -92,7 +112,13 @@ class OBSController:
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
-                logger.warning(f"[OBS] Could not connect to OBS ({self.host}:{self.port}) in {elapsed_ms:.1f}ms: {e}")
+                if _is_obs_unreachable_error(e):
+                    logger.warning(
+                        f"[OBS] OBS Studio is not open or unreachable at {self.host}:{self.port} ({elapsed_ms:.1f}ms). "
+                        f"Please ensure OBS is running with WebSocket server enabled."
+                    )
+                else:
+                    logger.warning(f"[OBS] Could not connect to OBS ({self.host}:{self.port}) in {elapsed_ms:.1f}ms: {e}")
                 self._client = None
                 return False
 

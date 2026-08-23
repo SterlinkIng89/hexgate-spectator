@@ -11,7 +11,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from core.hexgate import start_bot, stop_bot
-from core.obs_controller import obs_controller
+from core.obs_controller import obs_controller, silence_external_loggers
 
 # User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
@@ -494,6 +494,9 @@ class App(ctk.CTk):
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
         formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
+
+        # Silence verbose external library tracebacks
+        silence_external_loggers()
         
         # GUI Handler
         gui_handler = TextboxHandler(self.log_queue)

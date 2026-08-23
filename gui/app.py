@@ -12,6 +12,9 @@ if project_root not in sys.path:
 
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
+from gui.components import CollapsibleFrame, ConsoleToolbar, StatusFooter
+
+APP_VERSION = "1.0.0"
 
 # User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
@@ -33,38 +36,6 @@ class TextboxHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         self.log_queue.put(msg)
-
-class CollapsibleFrame(ctk.CTkFrame):
-    def __init__(self, master, title: str, **kwargs):
-        super().__init__(master, **kwargs)
-        self.title_text = title
-        self.is_collapsed = False
-
-        self.header_btn = ctk.CTkButton(
-            self,
-            text=f"▼  {self.title_text}",
-            anchor="w",
-            fg_color="transparent",
-            hover_color="#2b2b2b",
-            text_color="#ffffff",
-            font=ctk.CTkFont(family="Roboto", size=14, weight="bold"),
-            height=28,
-            command=self.toggle
-        )
-        self.header_btn.pack(fill="x", padx=8, pady=(6, 4))
-
-        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
-
-    def toggle(self):
-        if self.is_collapsed:
-            self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
-            self.header_btn.configure(text=f"▼  {self.title_text}")
-            self.is_collapsed = False
-        else:
-            self.content_frame.pack_forget()
-            self.header_btn.configure(text=f"▶  {self.title_text}")
-            self.is_collapsed = True
 
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
@@ -282,43 +253,18 @@ class App(ctk.CTk):
         self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
         self.btn_toggle.pack(pady=8, padx=25, fill="x")
 
-        # --- Console Header Toolbar ---
-        self.log_toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        self.log_toolbar = ConsoleToolbar(
+            self,
+            get_log_text=lambda: self.log_box.get("1.0", "end-1c"),
+            logs_dir=LOGS_DIR,
+        )
         self.log_toolbar.pack(pady=(6, 2), padx=25, fill="x")
 
-        self.lbl_logs = ctk.CTkLabel(self.log_toolbar, text="Logs", font=section_font, text_color="#ffffff")
-        self.lbl_logs.pack(side="left")
-
-        self.btn_copy_logs = ctk.CTkButton(
-            self.log_toolbar,
-            text="Copy Logs",
-            width=80,
-            height=26,
-            font=sub_font,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#333333",
-            hover_color="#2b2b2b",
-            command=self._copy_logs,
-        )
-        self.btn_copy_logs.pack(side="right", padx=(4, 0))
-
-        self.btn_open_folder = ctk.CTkButton(
-            self.log_toolbar,
-            text="Open Folder",
-            width=90,
-            height=26,
-            font=sub_font,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#333333",
-            hover_color="#2b2b2b",
-            command=self._open_logs_folder,
-        )
-        self.btn_open_folder.pack(side="right", padx=(0, 4))
+        self.status_footer = StatusFooter(self, version=APP_VERSION)
+        self.status_footer.pack(side="bottom", fill="x")
 
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
-        self.log_box.pack(pady=(2, 15), padx=25, fill="both", expand=True)
+        self.log_box.pack(pady=(2, 6), padx=25, fill="both", expand=True)
 
         self.after(100, self.process_log_queue)
         self.after(500, self._update_stream_indicator)
@@ -585,33 +531,6 @@ class App(ctk.CTk):
             logger.addHandler(file_handler)
         except Exception as e:
             print(f"Could not setup file logger: {e}")
-
-    def _open_logs_folder(self):
-        """Opens the directory containing log files in the default file manager."""
-        try:
-            if not os.path.exists(LOGS_DIR):
-                os.makedirs(LOGS_DIR, exist_ok=True)
-            if sys.platform == "win32":
-                os.startfile(LOGS_DIR)
-            elif sys.platform == "darwin":
-                import subprocess
-                subprocess.Popen(["open", LOGS_DIR])
-            else:
-                import subprocess
-                subprocess.Popen(["xdg-open", LOGS_DIR])
-        except Exception as e:
-            logging.error(f"Failed to open logs directory: {e}")
-
-    def _copy_logs(self):
-        """Copies all text currently in the log box to the system clipboard."""
-        try:
-            logs_text = self.log_box.get("1.0", "end-1c")
-            self.clipboard_clear()
-            self.clipboard_append(logs_text)
-            self.btn_copy_logs.configure(text="Copied!")
-            self.after(2000, lambda: self.btn_copy_logs.configure(text="Copy Logs"))
-        except Exception as e:
-            logging.error(f"Failed to copy logs: {e}")
 
     def process_log_queue(self):
         while not self.log_queue.empty():

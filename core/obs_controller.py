@@ -72,7 +72,7 @@ class OBSController:
             self.scene = config_dict.get("obs_scene", "").strip()
             self.auto_start = bool(config_dict.get("obs_auto_start", True))
             self.auto_stop = bool(config_dict.get("obs_auto_stop", True))
-            self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", False))
+            self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", True))
             self.schedule_start_time = config_dict.get("obs_schedule_start_time", "10:00").strip() or "10:00"
             self.schedule_stop_time = config_dict.get("obs_schedule_stop_time", "16:00").strip() or "16:00"
 

@@ -191,27 +191,41 @@ class App(ctk.CTk):
         self.check_obs_schedule.grid(row=4, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
         # --- Start time pickers (12h + AM/PM) ---
-        ctk.CTkLabel(self.obs_frame, text="Stream Start:", font=label_font).grid(row=5, column=0, padx=10, pady=4, sticky="w")
         start_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
-        start_time_frame.grid(row=5, column=1, padx=6, pady=4, sticky="we")
-        self.combo_start_hour = ctk.CTkComboBox(start_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font, command=self._on_start_time_changed)
+        start_time_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(2, 8), sticky="w")
+
+        ctk.CTkLabel(start_time_frame, text="Stream Start:", font=label_font).pack(side="left", padx=(0, 8))
+        self.combo_start_hour = ctk.CTkComboBox(
+            start_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
         self.combo_start_hour.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(start_time_frame, text=":", font=label_font).pack(side="left")
-        self.combo_start_min = ctk.CTkComboBox(start_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font, command=self._on_start_time_changed)
-        self.combo_start_min.pack(side="left", padx=(2, 4))
-        self.combo_start_ampm = ctk.CTkComboBox(start_time_frame, values=["AM", "PM"], width=58, font=label_font, command=self._on_start_time_changed)
+        ctk.CTkLabel(start_time_frame, text=":", font=label_font).pack(side="left", padx=(0, 2))
+        self.combo_start_min = ctk.CTkComboBox(
+            start_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
+        self.combo_start_min.pack(side="left", padx=(0, 4))
+        self.combo_start_ampm = ctk.CTkComboBox(
+            start_time_frame, values=["AM", "PM"], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
         self.combo_start_ampm.pack(side="left")
 
         # --- Stop time pickers (12h + AM/PM) ---
-        ctk.CTkLabel(self.obs_frame, text="Stream Stop:", font=label_font).grid(row=5, column=2, padx=10, pady=4, sticky="w")
         stop_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
-        stop_time_frame.grid(row=5, column=3, padx=6, pady=4, sticky="we")
-        self.combo_stop_hour = ctk.CTkComboBox(stop_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font, command=self._on_stop_time_changed)
+        stop_time_frame.grid(row=5, column=2, columnspan=2, padx=10, pady=(2, 8), sticky="w")
+
+        ctk.CTkLabel(stop_time_frame, text="Stream Stop:", font=label_font).pack(side="left", padx=(0, 8))
+        self.combo_stop_hour = ctk.CTkComboBox(
+            stop_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
         self.combo_stop_hour.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(stop_time_frame, text=":", font=label_font).pack(side="left")
-        self.combo_stop_min = ctk.CTkComboBox(stop_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font, command=self._on_stop_time_changed)
-        self.combo_stop_min.pack(side="left", padx=(2, 4))
-        self.combo_stop_ampm = ctk.CTkComboBox(stop_time_frame, values=["AM", "PM"], width=58, font=label_font, command=self._on_stop_time_changed)
+        ctk.CTkLabel(stop_time_frame, text=":", font=label_font).pack(side="left", padx=(0, 2))
+        self.combo_stop_min = ctk.CTkComboBox(
+            stop_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
+        self.combo_stop_min.pack(side="left", padx=(0, 4))
+        self.combo_stop_ampm = ctk.CTkComboBox(
+            stop_time_frame, values=["AM", "PM"], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
         self.combo_stop_ampm.pack(side="left")
 
         # Widget lists — used by _on_toggle_* and toggle_bot to avoid

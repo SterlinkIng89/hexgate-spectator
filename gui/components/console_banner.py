@@ -6,7 +6,7 @@ inspired by modern developer terminals (Docker Desktop, etc.).
 
 import customtkinter as ctk
 
-# ASCII Artwork & Branding — replace these lines to update the logo/icon (Issue #32)
+# ASCII Artwork & Branding
 ASCII_ICON = [
     " ",
     " ",

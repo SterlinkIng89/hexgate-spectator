@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from gui.fonts import get_section_font
 
 class CollapsibleFrame(ctk.CTkFrame):
     def __init__(self, master, title: str, **kwargs):
@@ -13,7 +14,7 @@ class CollapsibleFrame(ctk.CTkFrame):
             fg_color="transparent",
             hover_color="#2b2b2b",
             text_color="#ffffff",
-            font=ctk.CTkFont(family="Roboto", size=14, weight="bold"),
+            font=get_section_font(),
             height=28,
             command=self.toggle,
         )

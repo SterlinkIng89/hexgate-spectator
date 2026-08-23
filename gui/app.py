@@ -13,6 +13,16 @@ if project_root not in sys.path:
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
 from gui.components import CollapsibleFrame, ConsoleToolbar, StatusFooter, render_startup_banner
+from gui.fonts import (
+    init_fonts,
+    get_title_font,
+    get_section_font,
+    get_status_font,
+    get_button_font,
+    get_label_font,
+    get_sub_font,
+    get_console_font,
+)
 
 APP_VERSION = "1.0.0"
 
@@ -68,13 +78,15 @@ class App(ctk.CTk):
         self.log_queue = queue.Queue()
         self.setup_logging()
 
-        # Fonts
-        title_font = ctk.CTkFont(family="Roboto", size=24, weight="bold")
-        status_font = ctk.CTkFont(family="Roboto", size=15, weight="bold")
-        section_font = ctk.CTkFont(family="Roboto", size=14, weight="bold")
-        label_font = ctk.CTkFont(family="Roboto", size=13)
-        sub_font = ctk.CTkFont(family="Roboto", size=12)
-        btn_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
+        # Initialize Typography System
+        init_fonts()
+        title_font = get_title_font()
+        status_font = get_status_font()
+        section_font = get_section_font()
+        label_font = get_label_font()
+        sub_font = get_sub_font()
+        btn_font = get_button_font()
+        console_font = get_console_font()
 
         # --- UI Layout ---
         
@@ -98,7 +110,7 @@ class App(ctk.CTk):
         self.bot_status_header = ctk.CTkFrame(self.bot_card, fg_color="transparent")
         self.bot_status_header.pack(pady=(8, 1))
         
-        self.bot_status_dot = ctk.CTkLabel(self.bot_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#e74c3c")
+        self.bot_status_dot = ctk.CTkLabel(self.bot_status_header, text="●", font=get_label_font(), text_color="#e74c3c")
         self.bot_status_dot.pack(side="left", padx=(0, 6))
         
         self.bot_status_label = ctk.CTkLabel(self.bot_status_header, text="Bot: Stopped", font=status_font, text_color="#e74c3c")
@@ -114,7 +126,7 @@ class App(ctk.CTk):
         self.stream_status_header = ctk.CTkFrame(self.stream_card, fg_color="transparent")
         self.stream_status_header.pack(pady=(8, 1))
         
-        self.stream_status_dot = ctk.CTkLabel(self.stream_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#7f8c8d")
+        self.stream_status_dot = ctk.CTkLabel(self.stream_status_header, text="●", font=get_label_font(), text_color="#7f8c8d")
         self.stream_status_dot.pack(side="left", padx=(0, 6))
         
         self.stream_status_label = ctk.CTkLabel(self.stream_status_header, text="Stream: Ready", font=status_font, text_color="#7f8c8d")
@@ -263,7 +275,7 @@ class App(ctk.CTk):
         self.status_footer = StatusFooter(self, version=APP_VERSION)
         self.status_footer.pack(side="bottom", fill="x")
 
-        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
+        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=console_font, border_width=1, border_color="#333333")
         self.log_box.pack(pady=(2, 6), padx=25, fill="both", expand=True)
 
         # Configure tags for visual session dividers

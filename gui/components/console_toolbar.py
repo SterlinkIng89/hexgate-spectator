@@ -3,6 +3,7 @@ import sys
 import logging
 import subprocess
 import customtkinter as ctk
+from gui.fonts import get_section_font, get_sub_font
 
 class ConsoleToolbar(ctk.CTkFrame):
     def __init__(self, master, get_log_text, logs_dir: str, title: str = "Logs", **kwargs):
@@ -12,8 +13,8 @@ class ConsoleToolbar(ctk.CTkFrame):
         self._get_log_text = get_log_text
         self._logs_dir = logs_dir
 
-        section_font = ctk.CTkFont(family="Roboto", size=14, weight="bold")
-        btn_font = ctk.CTkFont(family="Roboto", size=12)
+        section_font = get_section_font()
+        btn_font = get_sub_font()
 
         self.lbl_title = ctk.CTkLabel(self, text=title, font=section_font, text_color="#ffffff")
         self.lbl_title.pack(side="left")

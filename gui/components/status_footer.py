@@ -1,6 +1,7 @@
 import logging
 import customtkinter as ctk
 import psutil
+from gui.fonts import get_small_font
 
 class StatusFooter(ctk.CTkFrame):
     def __init__(self, master, version: str = "1.0.0", refresh_ms: int = 1000, **kwargs):
@@ -17,7 +18,7 @@ class StatusFooter(ctk.CTkFrame):
         self._process.cpu_percent()  # First call initializes the counter; discard result.
         self._cpu_count = psutil.cpu_count() or 1
 
-        font = ctk.CTkFont(family="Roboto", size=11)
+        font = get_small_font()
 
         self.ram_label = ctk.CTkLabel(self, text="RAM: — MB", font=font, text_color="#888888")
         self.ram_label.pack(side="left", padx=(12, 12), pady=4)

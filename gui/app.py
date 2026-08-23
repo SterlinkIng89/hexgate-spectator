@@ -17,10 +17,13 @@ from core.obs_controller import obs_controller, silence_external_loggers
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
 CONFIG_DIR = os.path.join(APPDATA, 'HexgateSpectator')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
+LOGS_DIR = os.path.join(CONFIG_DIR, 'logs')
 
-# Create folder if it doesn't exist
+# Create folders if they don't exist
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
 
 class TextboxHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -279,8 +282,43 @@ class App(ctk.CTk):
         self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
         self.btn_toggle.pack(pady=8, padx=25, fill="x")
 
+        # --- Console Header Toolbar ---
+        self.log_toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        self.log_toolbar.pack(pady=(6, 2), padx=25, fill="x")
+
+        self.lbl_logs = ctk.CTkLabel(self.log_toolbar, text="Logs", font=section_font, text_color="#ffffff")
+        self.lbl_logs.pack(side="left")
+
+        self.btn_copy_logs = ctk.CTkButton(
+            self.log_toolbar,
+            text="Copy Logs",
+            width=80,
+            height=26,
+            font=sub_font,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#333333",
+            hover_color="#2b2b2b",
+            command=self._copy_logs,
+        )
+        self.btn_copy_logs.pack(side="right", padx=(4, 0))
+
+        self.btn_open_folder = ctk.CTkButton(
+            self.log_toolbar,
+            text="Open Folder",
+            width=90,
+            height=26,
+            font=sub_font,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#333333",
+            hover_color="#2b2b2b",
+            command=self._open_logs_folder,
+        )
+        self.btn_open_folder.pack(side="right", padx=(0, 4))
+
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
-        self.log_box.pack(pady=(5, 15), padx=25, fill="both", expand=True)
+        self.log_box.pack(pady=(2, 15), padx=25, fill="both", expand=True)
 
         self.after(100, self.process_log_queue)
         self.after(500, self._update_stream_indicator)
@@ -541,17 +579,39 @@ class App(ctk.CTk):
         try:
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            logs_dir = os.path.join(CONFIG_DIR, 'logs')
-            if not os.path.exists(logs_dir):
-                os.makedirs(logs_dir)
-                
-            log_file = os.path.join(logs_dir, f'session_{timestamp}.log')
+            log_file = os.path.join(LOGS_DIR, f'session_{timestamp}.log')
             file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except Exception as e:
             print(f"Could not setup file logger: {e}")
+
+    def _open_logs_folder(self):
+        """Opens the directory containing log files in the default file manager."""
+        try:
+            if not os.path.exists(LOGS_DIR):
+                os.makedirs(LOGS_DIR, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(LOGS_DIR)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", LOGS_DIR])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", LOGS_DIR])
+        except Exception as e:
+            logging.error(f"Failed to open logs directory: {e}")
+
+    def _copy_logs(self):
+        """Copies all text currently in the log box to the system clipboard."""
+        try:
+            logs_text = self.log_box.get("1.0", "end-1c")
+            self.clipboard_clear()
+            self.clipboard_append(logs_text)
+            self.btn_copy_logs.configure(text="Copied!")
+            self.after(2000, lambda: self.btn_copy_logs.configure(text="Copy Logs"))
+        except Exception as e:
+            logging.error(f"Failed to copy logs: {e}")
 
     def process_log_queue(self):
         while not self.log_queue.empty():

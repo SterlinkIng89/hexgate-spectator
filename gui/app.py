@@ -34,8 +34,8 @@ class TextboxHandler(logging.Handler):
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
         "obs_enabled": 0,
-        "obs_host": "localhost",
-        "obs_port": "4455",
+        "obs_host": "",
+        "obs_port": "",
         "obs_password": "",
         "obs_profile": "",
         "obs_scene_collection": "",
@@ -191,27 +191,41 @@ class App(ctk.CTk):
         self.check_obs_schedule.grid(row=4, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
         # --- Start time pickers (12h + AM/PM) ---
-        ctk.CTkLabel(self.obs_frame, text="Stream Start:", font=label_font).grid(row=5, column=0, padx=10, pady=4, sticky="w")
         start_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
-        start_time_frame.grid(row=5, column=1, padx=6, pady=4, sticky="we")
-        self.combo_start_hour = ctk.CTkComboBox(start_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font, command=self._on_start_time_changed)
+        start_time_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=(2, 8), sticky="w")
+
+        ctk.CTkLabel(start_time_frame, text="Stream Start:", font=label_font).pack(side="left", padx=(0, 8))
+        self.combo_start_hour = ctk.CTkComboBox(
+            start_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
         self.combo_start_hour.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(start_time_frame, text=":", font=label_font).pack(side="left")
-        self.combo_start_min = ctk.CTkComboBox(start_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font, command=self._on_start_time_changed)
-        self.combo_start_min.pack(side="left", padx=(2, 4))
-        self.combo_start_ampm = ctk.CTkComboBox(start_time_frame, values=["AM", "PM"], width=58, font=label_font, command=self._on_start_time_changed)
+        ctk.CTkLabel(start_time_frame, text=":", font=label_font).pack(side="left", padx=(0, 2))
+        self.combo_start_min = ctk.CTkComboBox(
+            start_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
+        self.combo_start_min.pack(side="left", padx=(0, 4))
+        self.combo_start_ampm = ctk.CTkComboBox(
+            start_time_frame, values=["AM", "PM"], width=64, font=label_font, dropdown_font=label_font, command=self._on_start_time_changed
+        )
         self.combo_start_ampm.pack(side="left")
 
         # --- Stop time pickers (12h + AM/PM) ---
-        ctk.CTkLabel(self.obs_frame, text="Stream Stop:", font=label_font).grid(row=5, column=2, padx=10, pady=4, sticky="w")
         stop_time_frame = ctk.CTkFrame(self.obs_frame, fg_color="transparent")
-        stop_time_frame.grid(row=5, column=3, padx=6, pady=4, sticky="we")
-        self.combo_stop_hour = ctk.CTkComboBox(stop_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=60, font=label_font, command=self._on_stop_time_changed)
+        stop_time_frame.grid(row=5, column=2, columnspan=2, padx=10, pady=(2, 8), sticky="w")
+
+        ctk.CTkLabel(stop_time_frame, text="Stream Stop:", font=label_font).pack(side="left", padx=(0, 8))
+        self.combo_stop_hour = ctk.CTkComboBox(
+            stop_time_frame, values=[f"{h:02d}" for h in range(1, 13)], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
         self.combo_stop_hour.pack(side="left", padx=(0, 2))
-        ctk.CTkLabel(stop_time_frame, text=":", font=label_font).pack(side="left")
-        self.combo_stop_min = ctk.CTkComboBox(stop_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=60, font=label_font, command=self._on_stop_time_changed)
-        self.combo_stop_min.pack(side="left", padx=(2, 4))
-        self.combo_stop_ampm = ctk.CTkComboBox(stop_time_frame, values=["AM", "PM"], width=58, font=label_font, command=self._on_stop_time_changed)
+        ctk.CTkLabel(stop_time_frame, text=":", font=label_font).pack(side="left", padx=(0, 2))
+        self.combo_stop_min = ctk.CTkComboBox(
+            stop_time_frame, values=[f"{m:02d}" for m in range(0, 60, 5)], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
+        self.combo_stop_min.pack(side="left", padx=(0, 4))
+        self.combo_stop_ampm = ctk.CTkComboBox(
+            stop_time_frame, values=["AM", "PM"], width=64, font=label_font, dropdown_font=label_font, command=self._on_stop_time_changed
+        )
         self.combo_stop_ampm.pack(side="left")
 
         # Widget lists — used by _on_toggle_* and toggle_bot to avoid
@@ -392,52 +406,40 @@ class App(ctk.CTk):
             except Exception as e:
                 logging.error(f"Error loading configuration: {e}")
         
-        lobby_val = default_config.get("lobby_name", "")
-        if lobby_val:
-            self.entry_lobby.insert(0, lobby_val)
-            
-        pass_val = default_config.get("passwords", "")
-        if pass_val:
-            self.entry_passwords.insert(0, pass_val)
-            
+        # Load Text Entries
+        text_entries = [
+            ("lobby_name", self.entry_lobby),
+            ("passwords", self.entry_passwords),
+            ("ignored_words", self.entry_ignored),
+            ("obs_host", self.entry_obs_host),
+            ("obs_port", self.entry_obs_port),
+            ("obs_password", self.entry_obs_password),
+            ("obs_profile", self.entry_obs_profile),
+            ("obs_scene_collection", self.entry_obs_scene_collection),
+            ("obs_scene", self.entry_obs_scene),
+        ]
+        
+        for key, widget in text_entries:
+            val = default_config.get(key, "")
+            if val:
+                widget.insert(0, str(val))
+                
         self.entry_delay.insert(0, str(default_config.get("camera_delay", "3")))
         
-        ignored_val = default_config.get("ignored_words", "")
-        if ignored_val:
-            self.entry_ignored.insert(0, ignored_val)
+        # Load Checkboxes
+        checkboxes = [
+            ("invite_only", self.check_invite_only),
+            ("obs_enabled", self.check_obs_enabled),
+            ("obs_auto_start", self.check_obs_auto_start),
+            ("obs_auto_stop", self.check_obs_auto_stop),
+            ("obs_schedule_enabled", self.check_obs_schedule),
+        ]
         
-        if default_config.get("invite_only", 0):
-            self.check_invite_only.select()
-        else:
-            self.check_invite_only.deselect()
-
-        # OBS Settings
-        if default_config.get("obs_enabled", 0):
-            self.check_obs_enabled.select()
-        else:
-            self.check_obs_enabled.deselect()
-
-        if default_config.get("obs_auto_start", 1):
-            self.check_obs_auto_start.select()
-        else:
-            self.check_obs_auto_start.deselect()
-
-        if default_config.get("obs_auto_stop", 1):
-            self.check_obs_auto_stop.select()
-        else:
-            self.check_obs_auto_stop.deselect()
-
-        if default_config.get("obs_schedule_enabled", 0):
-            self.check_obs_schedule.select()
-        else:
-            self.check_obs_schedule.deselect()
-
-        self.entry_obs_host.insert(0, str(default_config.get("obs_host", "localhost")))
-        self.entry_obs_port.insert(0, str(default_config.get("obs_port", "4455")))
-        self.entry_obs_password.insert(0, str(default_config.get("obs_password", "")))
-        self.entry_obs_profile.insert(0, str(default_config.get("obs_profile", "")))
-        self.entry_obs_scene_collection.insert(0, str(default_config.get("obs_scene_collection", "")))
-        self.entry_obs_scene.insert(0, str(default_config.get("obs_scene", "")))
+        for key, widget in checkboxes:
+            if default_config.get(key, 0):
+                widget.select()
+            else:
+                widget.deselect()
 
         sh, sm, sampm = self._from_24h(str(default_config.get("obs_schedule_start_time", "10:00")), default_h=10, default_m=0)
         self._set_combo_value(self.combo_start_hour, sh)

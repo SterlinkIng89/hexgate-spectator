@@ -26,8 +26,9 @@ class OBSController:
         self.auto_start = True
         self.auto_stop = True
         self.schedule_enabled = False
-        self.schedule_start_time = ""
-        self.schedule_stop_time = ""
+        self.schedule_start_time = "10:00"
+        self.schedule_stop_time = "16:00"
+        self._pending_stop_after_game = False
         self._scheduler_thread = None
         self._stop_scheduler_event = threading.Event()
         self._last_schedule_start_day = None
@@ -53,8 +54,8 @@ class OBSController:
             self.auto_start = bool(config_dict.get("obs_auto_start", True))
             self.auto_stop = bool(config_dict.get("obs_auto_stop", True))
             self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", False))
-            self.schedule_start_time = config_dict.get("obs_schedule_start_time", "").strip()
-            self.schedule_stop_time = config_dict.get("obs_schedule_stop_time", "").strip()
+            self.schedule_start_time = config_dict.get("obs_schedule_start_time", "10:00").strip() or "10:00"
+            self.schedule_stop_time = config_dict.get("obs_schedule_stop_time", "16:00").strip() or "16:00"
 
     @property
     def is_connected(self) -> bool:
@@ -224,6 +225,7 @@ class OBSController:
         if not self.enabled:
             return False
         with self._lock:
+            self._pending_stop_after_game = False
             if not self._ensure_connected():
                 return False
             t0 = time.perf_counter()
@@ -243,6 +245,14 @@ class OBSController:
                     return True
                 logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
                 return False
+
+    def is_game_in_progress(self) -> bool:
+        """Returns True if the spectator bot is actively in an InProgress match."""
+        try:
+            from core.hexgate.state import bot_state
+            return bool(bot_state.bot_active and bot_state.current_phase == "InProgress")
+        except Exception:
+            return False
 
     def _apply_scene_and_start(self):
         """
@@ -319,14 +329,27 @@ class OBSController:
                         if self.schedule_start_time and now_str == self.schedule_start_time:
                             if self._last_schedule_start_day != today_str:
                                 self._last_schedule_start_day = today_str
+                                self._pending_stop_after_game = False
                                 logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
                                 threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
 
                         if self.schedule_stop_time and now_str == self.schedule_stop_time:
                             if self._last_schedule_stop_day != today_str:
                                 self._last_schedule_stop_day = today_str
-                                logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
-                                threading.Thread(target=self.stop_stream, daemon=True).start()
+                                if self.is_game_in_progress():
+                                    self._pending_stop_after_game = True
+                                    logger.info(
+                                        f"[OBS Schedule] Scheduled stop time reached ({now_str}), but a game is currently in progress. "
+                                        f"Postponing stream stop until match finishes."
+                                    )
+                                else:
+                                    logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
+                                    threading.Thread(target=self.stop_stream, daemon=True).start()
+
+                        if self._pending_stop_after_game and not self.is_game_in_progress():
+                            logger.info("[OBS Schedule] Active game concluded after scheduled stop time. Stopping stream now...")
+                            self._pending_stop_after_game = False
+                            threading.Thread(target=self.stop_stream, daemon=True).start()
 
             except Exception as e:
                 logger.warning(f"[OBS Schedule] Loop error: {e}")
@@ -338,6 +361,7 @@ class OBSController:
     def stop_scheduler(self):
         """Stops the background schedule monitor loop cleanly."""
         self._stop_scheduler_event.set()
+        self._pending_stop_after_game = False
 
     def get_status_summary(self, is_bot_running: bool = False) -> dict:
         """Returns thread-safe formatted status summary for the GUI header indicator."""
@@ -364,7 +388,9 @@ class OBSController:
                     duration_str = f"{h:02d}:{m:02d}:{s:02d}"
 
                 detail = f"Live: {duration_str}" if duration_str else "Live streaming in progress"
-                if start_str:
+                if self._pending_stop_after_game:
+                    detail += " • Stopping after match"
+                elif start_str:
                     detail += f" (Started at {start_str})"
 
                 return {
@@ -476,9 +502,10 @@ class OBSController:
         """
         if not self.enabled or not self.auto_stop:
             return
-        if self.schedule_enabled and self.is_current_time_in_range():
+        if self.schedule_enabled and self.is_current_time_in_range() and not self._pending_stop_after_game:
             logger.info("[OBS] Skipping auto-stop on game end because schedule window is active.")
             return
+        self._pending_stop_after_game = False
         threading.Thread(target=self.stop_stream, daemon=True, name="OBSGameEndWorker").start()
 
 

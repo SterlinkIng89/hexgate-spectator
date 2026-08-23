@@ -12,15 +12,31 @@ if project_root not in sys.path:
 
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
+from gui.components import CollapsibleFrame, ConsoleToolbar, StatusFooter, render_startup_banner
+from gui.fonts import (
+    init_fonts,
+    get_title_font,
+    get_section_font,
+    get_status_font,
+    get_button_font,
+    get_label_font,
+    get_sub_font,
+    get_console_font,
+)
+
+APP_VERSION = "1.0.0"
 
 # User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))
 CONFIG_DIR = os.path.join(APPDATA, 'HexgateSpectator')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
+LOGS_DIR = os.path.join(CONFIG_DIR, 'logs')
 
-# Create folder if it doesn't exist
+# Create folders if they don't exist
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
 
 class TextboxHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -30,38 +46,6 @@ class TextboxHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         self.log_queue.put(msg)
-
-class CollapsibleFrame(ctk.CTkFrame):
-    def __init__(self, master, title: str, **kwargs):
-        super().__init__(master, **kwargs)
-        self.title_text = title
-        self.is_collapsed = False
-
-        self.header_btn = ctk.CTkButton(
-            self,
-            text=f"▼  {self.title_text}",
-            anchor="w",
-            fg_color="transparent",
-            hover_color="#2b2b2b",
-            text_color="#ffffff",
-            font=ctk.CTkFont(family="Roboto", size=14, weight="bold"),
-            height=28,
-            command=self.toggle
-        )
-        self.header_btn.pack(fill="x", padx=8, pady=(6, 4))
-
-        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
-
-    def toggle(self):
-        if self.is_collapsed:
-            self.content_frame.pack(fill="both", expand=True, padx=4, pady=(0, 6))
-            self.header_btn.configure(text=f"▼  {self.title_text}")
-            self.is_collapsed = False
-        else:
-            self.content_frame.pack_forget()
-            self.header_btn.configure(text=f"▶  {self.title_text}")
-            self.is_collapsed = True
 
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
@@ -94,13 +78,15 @@ class App(ctk.CTk):
         self.log_queue = queue.Queue()
         self.setup_logging()
 
-        # Fonts
-        title_font = ctk.CTkFont(family="Roboto", size=24, weight="bold")
-        status_font = ctk.CTkFont(family="Roboto", size=15, weight="bold")
-        section_font = ctk.CTkFont(family="Roboto", size=14, weight="bold")
-        label_font = ctk.CTkFont(family="Roboto", size=13)
-        sub_font = ctk.CTkFont(family="Roboto", size=12)
-        btn_font = ctk.CTkFont(family="Roboto", size=16, weight="bold")
+        # Initialize Typography System
+        init_fonts()
+        title_font = get_title_font()
+        status_font = get_status_font()
+        section_font = get_section_font()
+        label_font = get_label_font()
+        sub_font = get_sub_font()
+        btn_font = get_button_font()
+        console_font = get_console_font()
 
         # --- UI Layout ---
         
@@ -124,7 +110,7 @@ class App(ctk.CTk):
         self.bot_status_header = ctk.CTkFrame(self.bot_card, fg_color="transparent")
         self.bot_status_header.pack(pady=(8, 1))
         
-        self.bot_status_dot = ctk.CTkLabel(self.bot_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#e74c3c")
+        self.bot_status_dot = ctk.CTkLabel(self.bot_status_header, text="●", font=get_label_font(), text_color="#e74c3c")
         self.bot_status_dot.pack(side="left", padx=(0, 6))
         
         self.bot_status_label = ctk.CTkLabel(self.bot_status_header, text="Bot: Stopped", font=status_font, text_color="#e74c3c")
@@ -140,7 +126,7 @@ class App(ctk.CTk):
         self.stream_status_header = ctk.CTkFrame(self.stream_card, fg_color="transparent")
         self.stream_status_header.pack(pady=(8, 1))
         
-        self.stream_status_dot = ctk.CTkLabel(self.stream_status_header, text="●", font=ctk.CTkFont(family="Roboto", size=13, weight="bold"), text_color="#7f8c8d")
+        self.stream_status_dot = ctk.CTkLabel(self.stream_status_header, text="●", font=get_label_font(), text_color="#7f8c8d")
         self.stream_status_dot.pack(side="left", padx=(0, 6))
         
         self.stream_status_label = ctk.CTkLabel(self.stream_status_header, text="Stream: Ready", font=status_font, text_color="#7f8c8d")
@@ -279,8 +265,25 @@ class App(ctk.CTk):
         self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
         self.btn_toggle.pack(pady=8, padx=25, fill="x")
 
-        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
-        self.log_box.pack(pady=(5, 15), padx=25, fill="both", expand=True)
+        self.log_toolbar = ConsoleToolbar(
+            self,
+            get_log_text=lambda: self.log_box.get("1.0", "end-1c"),
+            logs_dir=LOGS_DIR,
+        )
+        self.log_toolbar.pack(pady=(6, 2), padx=25, fill="x")
+
+        self.status_footer = StatusFooter(self, version=APP_VERSION)
+        self.status_footer.pack(side="bottom", fill="x")
+
+        self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=console_font, border_width=1, border_color="#333333")
+        self.log_box.pack(pady=(2, 6), padx=25, fill="both", expand=True)
+
+        # Configure tags for visual session dividers
+        self.log_box._textbox.tag_config("session_start", foreground="#5dade2")
+        self.log_box._textbox.tag_config("session_stop", foreground="#e67e22")
+
+        # Render ASCII banner and initial system info
+        render_startup_banner(self.log_box, version=APP_VERSION)
 
         self.after(100, self.process_log_queue)
         self.after(500, self._update_stream_indicator)
@@ -541,12 +544,7 @@ class App(ctk.CTk):
         try:
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            logs_dir = os.path.join(CONFIG_DIR, 'logs')
-            if not os.path.exists(logs_dir):
-                os.makedirs(logs_dir)
-                
-            log_file = os.path.join(logs_dir, f'session_{timestamp}.log')
+            log_file = os.path.join(LOGS_DIR, f'session_{timestamp}.log')
             file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
@@ -557,7 +555,13 @@ class App(ctk.CTk):
         while not self.log_queue.empty():
             msg = self.log_queue.get()
             self.log_box.configure(state="normal")
-            self.log_box.insert("end", msg + "\n")
+            tk_text = self.log_box._textbox
+            if "[Session Started:" in msg:
+                tk_text.insert("end", f"\n{msg}\n", "session_start")
+            elif "[Session Stopped:" in msg:
+                tk_text.insert("end", f"{msg}\n\n", "session_stop")
+            else:
+                tk_text.insert("end", msg + "\n")
             self.log_box.see("end")
             self.log_box.configure(state="disabled")
         self.after(100, self.process_log_queue)

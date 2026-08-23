@@ -12,6 +12,7 @@ Responsibilities:
 import asyncio
 import threading
 import logging
+from datetime import datetime
 
 from core.obs_controller import obs_controller
 from core.hexgate.config import BOT_CONFIG
@@ -100,6 +101,9 @@ init_connector_events(
 
 def start_bot(callback, config_data: dict):
     """Configures and starts the bot with the provided GUI callback and settings."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"─── [Session Started: {now_str}] ───")
+
     BOT_CONFIG.update(config_data)
 
     obs_controller.configure(config_data)
@@ -132,3 +136,5 @@ def stop_bot():
     obs_controller.disconnect()
 
     bot_state.update_gui_status("Bot Stopped.")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"─── [Session Stopped: {now_str}] ───")

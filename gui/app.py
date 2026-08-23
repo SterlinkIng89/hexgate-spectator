@@ -12,7 +12,7 @@ if project_root not in sys.path:
 
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
-from gui.components import CollapsibleFrame, ConsoleToolbar, StatusFooter
+from gui.components import CollapsibleFrame, ConsoleToolbar, StatusFooter, render_startup_banner
 
 APP_VERSION = "1.0.0"
 
@@ -265,6 +265,9 @@ class App(ctk.CTk):
 
         self.log_box = ctk.CTkTextbox(self, state="disabled", fg_color="#121212", text_color="#A5D6A7", font=("Consolas", 12), border_width=1, border_color="#333333")
         self.log_box.pack(pady=(2, 6), padx=25, fill="both", expand=True)
+
+        # Render ASCII banner and initial system info
+        render_startup_banner(self.log_box, version=APP_VERSION)
 
         self.after(100, self.process_log_queue)
         self.after(500, self._update_stream_indicator)

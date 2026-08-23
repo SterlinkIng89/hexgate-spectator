@@ -1,3 +1,4 @@
+import logging
 import customtkinter as ctk
 import psutil
 
@@ -13,7 +14,8 @@ class StatusFooter(ctk.CTkFrame):
 
         self._refresh_ms = refresh_ms
         self._process = psutil.Process()
-        self._process.cpu_percent()
+        self._process.cpu_percent()  # First call initializes the counter; discard result.
+        self._cpu_count = psutil.cpu_count() or 1
 
         font = ctk.CTkFont(family="Roboto", size=11)
 
@@ -31,8 +33,7 @@ class StatusFooter(ctk.CTkFrame):
     def _update_metrics(self) -> None:
         try:
             ram_mb = self._process.memory_info().rss / (1024 * 1024)
-            cpu_cores = psutil.cpu_count() or 1
-            cpu_pct = self._process.cpu_percent() / cpu_cores
+            cpu_pct = self._process.cpu_percent() / self._cpu_count
 
             ram_text = f"RAM: {ram_mb:.0f} MB"
             cpu_text = f"CPU: {cpu_pct:.1f}%"
@@ -41,7 +42,8 @@ class StatusFooter(ctk.CTkFrame):
                 self.ram_label.configure(text=ram_text)
             if self.cpu_label.cget("text") != cpu_text:
                 self.cpu_label.configure(text=cpu_text)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Failed to update metrics: {e}")
+            return  # Process no longer accessible; stop polling.
 
         self.after(self._refresh_ms, self._update_metrics)

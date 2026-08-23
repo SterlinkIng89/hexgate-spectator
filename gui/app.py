@@ -34,8 +34,8 @@ class TextboxHandler(logging.Handler):
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
         "obs_enabled": 0,
-        "obs_host": "localhost",
-        "obs_port": "4455",
+        "obs_host": "",
+        "obs_port": "",
         "obs_password": "",
         "obs_profile": "",
         "obs_scene_collection": "",
@@ -432,12 +432,29 @@ class App(ctk.CTk):
         else:
             self.check_obs_schedule.deselect()
 
-        self.entry_obs_host.insert(0, str(default_config.get("obs_host", "localhost")))
-        self.entry_obs_port.insert(0, str(default_config.get("obs_port", "4455")))
-        self.entry_obs_password.insert(0, str(default_config.get("obs_password", "")))
-        self.entry_obs_profile.insert(0, str(default_config.get("obs_profile", "")))
-        self.entry_obs_scene_collection.insert(0, str(default_config.get("obs_scene_collection", "")))
-        self.entry_obs_scene.insert(0, str(default_config.get("obs_scene", "")))
+        obs_host = default_config.get("obs_host", "")
+        if obs_host:
+            self.entry_obs_host.insert(0, str(obs_host))
+
+        obs_port = default_config.get("obs_port", "")
+        if obs_port:
+            self.entry_obs_port.insert(0, str(obs_port))
+
+        obs_password = default_config.get("obs_password", "")
+        if obs_password:
+            self.entry_obs_password.insert(0, str(obs_password))
+
+        obs_profile = default_config.get("obs_profile", "")
+        if obs_profile:
+            self.entry_obs_profile.insert(0, str(obs_profile))
+
+        obs_scene_collection = default_config.get("obs_scene_collection", "")
+        if obs_scene_collection:
+            self.entry_obs_scene_collection.insert(0, str(obs_scene_collection))
+
+        obs_scene = default_config.get("obs_scene", "")
+        if obs_scene:
+            self.entry_obs_scene.insert(0, str(obs_scene))
 
         sh, sm, sampm = self._from_24h(str(default_config.get("obs_schedule_start_time", "10:00")), default_h=10, default_m=0)
         self._set_combo_value(self.combo_start_hour, sh)

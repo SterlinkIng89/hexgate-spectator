@@ -62,7 +62,8 @@ class OBSController:
             self.enabled = bool(config_dict.get("obs_enabled", False))
             self.host = config_dict.get("obs_host", "localhost") or "localhost"
             try:
-                self.port = int(config_dict.get("obs_port", 4455))
+                port_val = config_dict.get("obs_port", 4455)
+                self.port = int(port_val) if port_val else 4455
             except (ValueError, TypeError):
                 self.port = 4455
             self.password = config_dict.get("obs_password", "") or ""

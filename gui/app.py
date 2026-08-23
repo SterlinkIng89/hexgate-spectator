@@ -406,69 +406,40 @@ class App(ctk.CTk):
             except Exception as e:
                 logging.error(f"Error loading configuration: {e}")
         
-        lobby_val = default_config.get("lobby_name", "")
-        if lobby_val:
-            self.entry_lobby.insert(0, lobby_val)
-            
-        pass_val = default_config.get("passwords", "")
-        if pass_val:
-            self.entry_passwords.insert(0, pass_val)
-            
+        # Load Text Entries
+        text_entries = [
+            ("lobby_name", self.entry_lobby),
+            ("passwords", self.entry_passwords),
+            ("ignored_words", self.entry_ignored),
+            ("obs_host", self.entry_obs_host),
+            ("obs_port", self.entry_obs_port),
+            ("obs_password", self.entry_obs_password),
+            ("obs_profile", self.entry_obs_profile),
+            ("obs_scene_collection", self.entry_obs_scene_collection),
+            ("obs_scene", self.entry_obs_scene),
+        ]
+        
+        for key, widget in text_entries:
+            val = default_config.get(key, "")
+            if val:
+                widget.insert(0, str(val))
+                
         self.entry_delay.insert(0, str(default_config.get("camera_delay", "3")))
         
-        ignored_val = default_config.get("ignored_words", "")
-        if ignored_val:
-            self.entry_ignored.insert(0, ignored_val)
+        # Load Checkboxes
+        checkboxes = [
+            ("invite_only", self.check_invite_only),
+            ("obs_enabled", self.check_obs_enabled),
+            ("obs_auto_start", self.check_obs_auto_start),
+            ("obs_auto_stop", self.check_obs_auto_stop),
+            ("obs_schedule_enabled", self.check_obs_schedule),
+        ]
         
-        if default_config.get("invite_only", 0):
-            self.check_invite_only.select()
-        else:
-            self.check_invite_only.deselect()
-
-        # OBS Settings
-        if default_config.get("obs_enabled", 0):
-            self.check_obs_enabled.select()
-        else:
-            self.check_obs_enabled.deselect()
-
-        if default_config.get("obs_auto_start", 1):
-            self.check_obs_auto_start.select()
-        else:
-            self.check_obs_auto_start.deselect()
-
-        if default_config.get("obs_auto_stop", 1):
-            self.check_obs_auto_stop.select()
-        else:
-            self.check_obs_auto_stop.deselect()
-
-        if default_config.get("obs_schedule_enabled", 0):
-            self.check_obs_schedule.select()
-        else:
-            self.check_obs_schedule.deselect()
-
-        obs_host = default_config.get("obs_host", "")
-        if obs_host:
-            self.entry_obs_host.insert(0, str(obs_host))
-
-        obs_port = default_config.get("obs_port", "")
-        if obs_port:
-            self.entry_obs_port.insert(0, str(obs_port))
-
-        obs_password = default_config.get("obs_password", "")
-        if obs_password:
-            self.entry_obs_password.insert(0, str(obs_password))
-
-        obs_profile = default_config.get("obs_profile", "")
-        if obs_profile:
-            self.entry_obs_profile.insert(0, str(obs_profile))
-
-        obs_scene_collection = default_config.get("obs_scene_collection", "")
-        if obs_scene_collection:
-            self.entry_obs_scene_collection.insert(0, str(obs_scene_collection))
-
-        obs_scene = default_config.get("obs_scene", "")
-        if obs_scene:
-            self.entry_obs_scene.insert(0, str(obs_scene))
+        for key, widget in checkboxes:
+            if default_config.get(key, 0):
+                widget.select()
+            else:
+                widget.deselect()
 
         sh, sm, sampm = self._from_24h(str(default_config.get("obs_schedule_start_time", "10:00")), default_h=10, default_m=0)
         self._set_combo_value(self.combo_start_hour, sh)

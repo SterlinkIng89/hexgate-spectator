@@ -43,7 +43,7 @@ class OBSController:
         self.scene = ""
         self.auto_start = True
         self.auto_stop = True
-        self.schedule_enabled = False
+        self.schedule_enabled = True
         self.schedule_start_time = "10:00"
         self.schedule_stop_time = "16:00"
         self._pending_stop_after_game = False

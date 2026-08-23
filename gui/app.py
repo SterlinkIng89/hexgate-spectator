@@ -164,7 +164,7 @@ class App(ctk.CTk):
         self.check_invite_only.grid(row=2, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
         # --- OBS Integration Settings Frame ---
-        self.obs_frame = CollapsibleFrame(self, title="OBS Integration Settings", border_width=1, border_color="#333333")
+        self.obs_frame = CollapsibleFrame(self, title="OBS Integration Settings", collapsed=True, border_width=1, border_color="#333333")
         self.obs_frame.pack(pady=5, padx=25, fill="x")
 
         self.obs_frame.content_frame.columnconfigure(0, weight=1)

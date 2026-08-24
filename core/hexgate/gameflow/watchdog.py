@@ -72,14 +72,13 @@ async def check_game_freeze(connection, cleanup_fn):
 
     # Clock has stalled
     frozen_for = now - _game_time_last_changed_at
-    for threshold in (15, 45, 90):
+    for threshold in (15, 45, 90, GAME_FREEZE_TIMEOUT):
         if frozen_for >= threshold and threshold not in _frozen_warnings_issued:
-            logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for {threshold}s...")
+            if threshold == GAME_FREEZE_TIMEOUT:
+                logger.warning(
+                    f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. "
+                    "Game is likely paused. Waiting for unpause or manual exit..."
+                )
+            else:
+                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for {threshold}s...")
             _frozen_warnings_issued.add(threshold)
-
-    if _game_time_last_changed_at > 0 and frozen_for >= GAME_FREEZE_TIMEOUT:
-        logger.warning(
-            f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. "
-            "Assuming all players left. Forcing cleanup..."
-        )
-        await cleanup_fn(connection, f"Game frozen for {frozen_for:.0f}s")

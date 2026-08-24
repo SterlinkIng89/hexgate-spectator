@@ -70,11 +70,31 @@ class YouTubePanel(ctk.CTkFrame):
 
         self.entry_stream_title = ctk.CTkEntry(
             self.title_frame,
-            placeholder_text="e.g. [EST vs INTZ - {date}]",
+            placeholder_text="e.g. EST vs INTZ - {date}",
             font=label_font
         )
         self.entry_stream_title.pack(side="left", fill="x", expand=True)
-        self.entry_stream_title.insert(0, "[EST vs INTZ - {date}]")
+        self.entry_stream_title.insert(0, "EST vs INTZ - {date}")
+
+        # Discord Webhook row
+        self.discord_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.discord_frame.pack(fill="x", padx=12, pady=(0, 6))
+
+        self.check_discord_enabled = ctk.CTkSwitch(
+            self.discord_frame,
+            text="Discord:",
+            font=label_font,
+            width=90,
+            command=self._on_toggle_discord_enabled
+        )
+        self.check_discord_enabled.pack(side="left", padx=(0, 6))
+
+        self.entry_discord_webhook = ctk.CTkEntry(
+            self.discord_frame,
+            placeholder_text="Optional: Webhook URL to auto-post stream link",
+            font=label_font
+        )
+        self.entry_discord_webhook.pack(side="left", fill="x", expand=True)
 
         # Bottom row: Live Stream URL & Copy action (visible once created)
         self.link_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -153,6 +173,20 @@ class YouTubePanel(ctk.CTkFrame):
         is_on = self.check_yt_enabled.get() == 1
         state = "normal" if is_on else "disabled"
         self.entry_stream_title.configure(state=state)
+        
+        if not is_on:
+            self.check_discord_enabled.configure(state="disabled")
+            self.entry_discord_webhook.configure(state="disabled")
+        else:
+            self.check_discord_enabled.configure(state="normal")
+            discord_on = self.check_discord_enabled.get() == 1
+            self.entry_discord_webhook.configure(state="normal" if discord_on else "disabled")
+            
+        self._notify_change()
+
+    def _on_toggle_discord_enabled(self):
+        discord_on = self.check_discord_enabled.get() == 1 and self.check_yt_enabled.get() == 1
+        self.entry_discord_webhook.configure(state="normal" if discord_on else "disabled")
         self._notify_change()
 
     def update_stream_url(self, url: str):
@@ -189,16 +223,34 @@ class YouTubePanel(ctk.CTkFrame):
             self.entry_stream_title.configure(state="normal" if is_on else "disabled")
             self.check_yt_enabled.configure(state="normal")
             self.btn_auth.configure(state="normal")
+            self.check_discord_enabled.configure(state="normal" if is_on else "disabled")
+            discord_on = self.check_discord_enabled.get() == 1
+            self.entry_discord_webhook.configure(state="normal" if (is_on and discord_on) else "disabled")
         else:
             self.entry_stream_title.configure(state="disabled")
+            self.check_discord_enabled.configure(state="disabled")
+            self.entry_discord_webhook.configure(state="disabled")
             self.check_yt_enabled.configure(state="disabled")
             self.btn_auth.configure(state="disabled")
 
     def load_config(self, config: dict):
         """Populates fields from saved configuration."""
-        title = config.get("yt_stream_title", "[EST vs INTZ - {date}]")
+        title = config.get("yt_stream_title", "EST vs INTZ - {date}")
+        if title == "[EST vs INTZ - {date}]":
+            title = "EST vs INTZ - {date}"
         self.entry_stream_title.delete(0, "end")
         self.entry_stream_title.insert(0, str(title))
+        
+        discord_webhook = config.get("discord_webhook_url", "")
+        self.entry_discord_webhook.delete(0, "end")
+        if discord_webhook:
+            self.entry_discord_webhook.insert(0, str(discord_webhook))
+
+        discord_enabled = config.get("discord_enabled", 1)
+        if discord_enabled:
+            self.check_discord_enabled.select()
+        else:
+            self.check_discord_enabled.deselect()
 
         yt_enabled = config.get("yt_enabled", 1)
         if yt_enabled:
@@ -210,8 +262,10 @@ class YouTubePanel(ctk.CTkFrame):
         self.refresh_auth_state()
 
     def get_config(self) -> dict:
-        """Returns current YouTube settings dictionary."""
+        """Returns current YouTube & Discord settings dictionary."""
         return {
             "yt_enabled": self.check_yt_enabled.get() == 1,
-            "yt_stream_title": self.entry_stream_title.get().strip() or "[EST vs INTZ - {date}]"
+            "yt_stream_title": self.entry_stream_title.get().strip() or "EST vs INTZ - {date}",
+            "discord_enabled": self.check_discord_enabled.get() == 1,
+            "discord_webhook_url": self.entry_discord_webhook.get().strip()
         }

@@ -152,7 +152,7 @@ class YouTubeManager:
     def format_title(title_template: str) -> str:
         """
         Formats a stream title replacing placeholders like {date} and {time}.
-        Example: '[EST vs INTZ - {date}]' -> '[EST vs INTZ - 24/08/2026]'
+        Example: 'EST vs INTZ - {date}' -> 'EST vs INTZ - 24/08/2026'
         """
         now = datetime.now()
         date_str = now.strftime("%d/%m/%Y")

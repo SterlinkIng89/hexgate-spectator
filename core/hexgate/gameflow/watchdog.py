@@ -78,8 +78,9 @@ async def check_game_freeze(connection, cleanup_fn):
             _frozen_warnings_issued.add(threshold)
 
     if _game_time_last_changed_at > 0 and frozen_for >= GAME_FREEZE_TIMEOUT:
-        logger.warning(
-            f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. "
-            "Assuming all players left. Forcing cleanup..."
-        )
-        await cleanup_fn(connection, f"Game frozen for {frozen_for:.0f}s")
+        if "timeout" not in _frozen_warnings_issued:
+            logger.warning(
+                f"[SPECTATE] Game time frozen for {frozen_for:.0f}s. "
+                "Game is likely paused. Waiting for unpause or manual exit..."
+            )
+            _frozen_warnings_issued.add("timeout")

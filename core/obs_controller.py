@@ -17,8 +17,15 @@ def _is_obs_unreachable_error(e: Exception) -> bool:
     return (
         isinstance(e, (ConnectionRefusedError, TimeoutError, ConnectionError, OSError))
         or "10061" in err_msg
+        or "10054" in err_msg
+        or "10053" in err_msg
         or "refused" in err_msg
         or "timed out" in err_msg
+        or "closed" in err_msg
+        or "not connected" in err_msg
+        or "broken pipe" in err_msg
+        or "connection reset" in err_msg
+        or "connection abort" in err_msg
     )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +89,17 @@ class OBSController:
         with self._lock:
             return self._client is not None
 
+    def health_check(self) -> bool:
+        """Verifies whether the current OBS client connection is responsive."""
+        with self._lock:
+            if self._client is None:
+                return False
+            try:
+                self._client.get_version()
+                return True
+            except Exception:
+                return False
+
     def connect(self, force: bool = False) -> bool:
         """Attempts to establish a connection to OBS WebSocket server."""
         if not self.enabled:
@@ -135,10 +153,26 @@ class OBSController:
                 self._client = None
                 logger.info("[OBS] Disconnected from OBS.")
 
-    def _ensure_connected(self) -> bool:
-        if self._client is None:
-            return self.connect()
-        return True
+    def _ensure_connected(self, check_health: bool = True) -> bool:
+        """
+        Ensures active connection to OBS WebSocket server.
+        If check_health is True and a client exists, pings OBS via get_version()
+        to detect stale/closed sockets, reconnecting immediately if unhealthy.
+        """
+        with self._lock:
+            if self._client is None:
+                return self.connect()
+
+            if check_health:
+                try:
+                    self._client.get_version()
+                    return True
+                except Exception as e:
+                    logger.warning(f"[OBS] Stale or dead connection detected ({e}). Reconnecting...")
+                    self.disconnect()
+                    return self.connect(force=True)
+
+            return True
 
     def _obs_call(self, log_label: str, method: str, *args) -> bool:
         """Acquires the RLock, ensures connection, then calls self._client.<method>(*args)."""
@@ -154,6 +188,8 @@ class OBSController:
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.error(f"[OBS] {log_label} ({elapsed_ms:.1f}ms): {e}")
+                if _is_obs_unreachable_error(e):
+                    self.disconnect()
                 return False
 
     def _mark_stream_started(self):
@@ -171,7 +207,7 @@ class OBSController:
     def get_stream_status(self) -> dict:
         """Returns dictionary with current stream state and updates cached status."""
         with self._lock:
-            if not self._ensure_connected():
+            if not self._ensure_connected(check_health=False):
                 res = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
                 self.cached_status = res
                 return res
@@ -196,7 +232,7 @@ class OBSController:
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.warning(f"[OBS] Error checking stream status ({elapsed_ms:.1f}ms): {e}")
-                self._client = None
+                self.disconnect()
                 res = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
                 self.cached_status = res
                 return res
@@ -246,6 +282,8 @@ class OBSController:
                     self._mark_stream_started()
                     return True
                 logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
+                if _is_obs_unreachable_error(e):
+                    self.disconnect()
                 return False
 
     def stop_stream(self) -> bool:
@@ -272,6 +310,8 @@ class OBSController:
                     self._mark_stream_stopped()
                     return True
                 logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
+                if _is_obs_unreachable_error(e):
+                    self.disconnect()
                 return False
 
     def is_game_in_progress(self) -> bool:

@@ -13,6 +13,7 @@ if project_root not in sys.path:
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
 from core.youtube_manager import youtube_manager
+from core.discord_notifier import send_discord_notification_async
 from gui.components import (
     ConsoleToolbar,
     StatusFooter,
@@ -69,7 +70,9 @@ class App(ctk.CTk):
     }
     _YT_DEFAULTS = {
         "yt_enabled": 1,
-        "yt_stream_title": "[EST vs INTZ - {date}]",
+        "yt_stream_title": "EST vs INTZ - {date}",
+        "discord_enabled": 1,
+        "discord_webhook_url": "",
     }
 
     def __init__(self):
@@ -294,10 +297,17 @@ class App(ctk.CTk):
 
             # Auto-create YouTube broadcast if enabled
             if yt_config.get("yt_enabled") and youtube_manager.is_authenticated():
-                title_tpl = yt_config.get("yt_stream_title", "[EST vs INTZ - {date}]")
+                title_tpl = yt_config.get("yt_stream_title", "EST vs INTZ - {date}")
                 
                 def on_broadcast_success(watch_url):
                     self.after(0, lambda: self.youtube_panel.update_stream_url(watch_url))
+                    
+                    discord_enabled = yt_config.get("discord_enabled", False)
+                    discord_webhook_url = yt_config.get("discord_webhook_url", "").strip()
+                    if discord_enabled and discord_webhook_url:
+                        formatted_title = youtube_manager.format_title(title_tpl)
+                        send_discord_notification_async(discord_webhook_url, formatted_title, watch_url)
+
                     if obs_controller.cached_status.get("active", False):
                         youtube_manager.transition_to_live_async()
 

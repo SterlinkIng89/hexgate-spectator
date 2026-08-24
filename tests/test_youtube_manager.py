@@ -8,9 +8,9 @@ from core.youtube_manager import YouTubeManager
 
 def test_format_title():
     now_date = datetime.now().strftime("%d/%m/%Y")
-    template = "[EST vs INTZ - {date}]"
+    template = "EST vs INTZ - {date}"
     formatted = YouTubeManager.format_title(template)
-    assert formatted == f"[EST vs INTZ - {now_date}]"
+    assert formatted == f"EST vs INTZ - {now_date}"
 
     custom = "Scrim Match #1"
     assert YouTubeManager.format_title(custom) == custom
@@ -57,7 +57,7 @@ def test_create_broadcast(tmp_path):
     mock_bind.execute.return_value = {}
     mock_yt.liveBroadcasts().bind.return_value = mock_bind
 
-    bid, watch_url = mgr.create_broadcast("[EST vs INTZ - {date}]", privacy="public")
+    bid, watch_url = mgr.create_broadcast("EST vs INTZ - {date}", privacy="public")
 
     assert bid == "mock_broadcast_123"
     assert watch_url == "https://www.youtube.com/watch?v=mock_broadcast_123"

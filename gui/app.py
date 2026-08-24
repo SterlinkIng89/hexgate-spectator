@@ -12,6 +12,7 @@ if project_root not in sys.path:
 
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
+from core.youtube_manager import youtube_manager
 from gui.components import (
     ConsoleToolbar,
     StatusFooter,
@@ -19,6 +20,7 @@ from gui.components import (
     StatusCards,
     LolSettingsForm,
     ObsSettingsForm,
+    YouTubePanel,
 )
 from gui.fonts import (
     init_fonts,
@@ -65,13 +67,17 @@ class App(ctk.CTk):
         "obs_schedule_start_time": "10:00",
         "obs_schedule_stop_time": "16:00",
     }
+    _YT_DEFAULTS = {
+        "yt_enabled": 1,
+        "yt_stream_title": "[EST vs INTZ - {date}]",
+    }
 
     def __init__(self):
         super().__init__()
         
         # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
-        self.geometry("700x900")
+        self.geometry("700x940")
         self.resizable(False, False)
         
         ctk.set_appearance_mode("dark")
@@ -95,9 +101,16 @@ class App(ctk.CTk):
         self.title_label = ctk.CTkLabel(self.top_frame, text="Hexgate Spectator", font=title_font)
         self.title_label.pack(pady=(0, 6))
         
-        # Status Cards Container
+        # Status Cards Container (LoL Bot & OBS Stream)
         self.status_cards = StatusCards(self.top_frame)
         self.status_cards.pack(pady=(0, 4), fill="x")
+
+        # YouTube Stream Panel (Placed directly under Status Cards)
+        self.youtube_panel = YouTubePanel(
+            self.top_frame,
+            on_config_changed=self._on_youtube_config_changed,
+        )
+        self.youtube_panel.pack(pady=(4, 4), fill="x")
 
         # League Client Settings Frame
         self.lol_settings_form = LolSettingsForm(self)
@@ -143,6 +156,10 @@ class App(ctk.CTk):
         if not self.is_running:
             obs_controller.configure(obs_config)
 
+    def _on_youtube_config_changed(self, yt_config: dict):
+        if not self.is_running:
+            pass
+
     def _update_stream_indicator(self):
         """Called every second to refresh the header stream indicator and status details."""
         summary = obs_controller.get_status_summary(is_bot_running=self.is_running)
@@ -162,6 +179,7 @@ class App(ctk.CTk):
             "ignored_words": "",
             "invite_only": 0,
             **self._OBS_DEFAULTS,
+            **self._YT_DEFAULTS,
         }
 
         if os.path.exists(CONFIG_FILE):
@@ -174,6 +192,7 @@ class App(ctk.CTk):
 
         self.lol_settings_form.load_config(default_config)
         self.obs_settings_form.load_config(default_config)
+        self.youtube_panel.load_config(default_config)
         obs_controller.configure(self.obs_settings_form.get_config())
 
     def save_config(self):
@@ -181,6 +200,7 @@ class App(ctk.CTk):
         config_data = {
             **self.lol_settings_form.get_config(),
             **self.obs_settings_form.get_config(),
+            **self.youtube_panel.get_config(),
         }
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -261,13 +281,30 @@ class App(ctk.CTk):
         if not self.is_running:
             self.save_config()
 
+            yt_config = self.youtube_panel.get_config()
             config_data = {
                 **self.lol_settings_form.get_runtime_config(),
                 **self.obs_settings_form.get_config(),
+                **yt_config,
             }
 
             self.lol_settings_form.set_enabled(False)
             self.obs_settings_form.set_enabled(False)
+            self.youtube_panel.set_enabled(False)
+
+            # Auto-create YouTube broadcast if enabled
+            if yt_config.get("yt_enabled") and youtube_manager.is_authenticated():
+                title_tpl = yt_config.get("yt_stream_title", "[EST vs INTZ - {date}]")
+                
+                def on_broadcast_success(watch_url):
+                    self.after(0, lambda: self.youtube_panel.update_stream_url(watch_url))
+                    if obs_controller.cached_status.get("active", False):
+                        youtube_manager.transition_to_live_async()
+
+                youtube_manager.create_broadcast_async(
+                    title_template=title_tpl,
+                    on_success=on_broadcast_success
+                )
 
             self.is_running = True
             self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")
@@ -280,6 +317,7 @@ class App(ctk.CTk):
 
             self.lol_settings_form.set_enabled(True)
             self.obs_settings_form.set_enabled(True)
+            self.youtube_panel.set_enabled(True)
             stop_bot()
 
 def run_app():

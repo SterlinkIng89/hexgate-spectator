@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
+from core.youtube_manager import youtube_manager
 
 # Silence third-party traceback dumps when OBS is offline
 def silence_external_loggers():
@@ -273,6 +274,7 @@ class OBSController:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(f"[OBS] Stream started successfully in {elapsed_ms:.1f}ms.")
                 self._mark_stream_started()
+                youtube_manager.transition_to_live_async()
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -280,6 +282,7 @@ class OBSController:
                 if "already active" in err_str or "output_running" in err_str or "code 500" in err_str:
                     logger.info(f"[OBS] Stream is already active ({elapsed_ms:.1f}ms).")
                     self._mark_stream_started()
+                    youtube_manager.transition_to_live_async()
                     return True
                 logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
                 if _is_obs_unreachable_error(e):

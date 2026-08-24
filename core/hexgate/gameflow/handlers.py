@@ -9,6 +9,7 @@ engine.py during initial state sync, without any fake event objects.
 import time
 import json
 from core.obs_controller import obs_controller
+from core.youtube_manager import youtube_manager
 from core.game_automation import trigger_camera_automation
 from core.hexgate.config import BOT_CONFIG, GAMEFLOW_PHASES
 from core.hexgate.state import bot_state, logger
@@ -41,6 +42,7 @@ async def process_phase_change(connection, phase: str):
         watchdog.reset()
         trigger_camera_automation(delay=BOT_CONFIG["camera_delay"])
         obs_controller.on_game_start()
+        youtube_manager.transition_to_live_async()
 
     if phase == "Reconnect" and phase_changed and bot_state.was_in_progress:
         logger.info("Reconnect phase detected after InProgress. All players likely left. Cleaning up...")

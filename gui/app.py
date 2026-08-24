@@ -10,6 +10,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from core.version import __version__ as APP_VERSION
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
 from core.youtube_manager import youtube_manager
@@ -30,7 +31,6 @@ from gui.fonts import (
     get_console_font,
 )
 
-APP_VERSION = "1.0.0"
 
 # User configuration saved in AppData
 APPDATA = os.getenv('APPDATA', os.path.expanduser('~'))

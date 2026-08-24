@@ -1,7 +1,14 @@
 from unittest.mock import patch
+import core.hexgate
+from core.version import __version__
 from core.hexgate.engine import stop_bot
 from core.obs_controller import obs_controller, OBSController
 from core.hexgate.state import bot_state
+
+
+def test_hexgate_version():
+    assert core.hexgate.__version__ == __version__
+    assert core.hexgate.__version__ == "2.0.0"
 
 
 def test_stop_bot_invokes_obs_on_bot_stop():

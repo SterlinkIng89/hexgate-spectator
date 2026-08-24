@@ -1,10 +1,11 @@
 import logging
 import customtkinter as ctk
 import psutil
+from core.version import __version__
 from gui.fonts import get_small_font
 
 class StatusFooter(ctk.CTkFrame):
-    def __init__(self, master, version: str = "1.0.0", refresh_ms: int = 1000, **kwargs):
+    def __init__(self, master, version: str = __version__, refresh_ms: int = 1000, **kwargs):
         kwargs.setdefault("fg_color", "#1e1e1e")
         kwargs.setdefault("border_width", 1)
         kwargs.setdefault("border_color", "#333333")

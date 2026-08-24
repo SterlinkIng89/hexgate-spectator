@@ -5,6 +5,7 @@ inspired by modern developer terminals (Docker Desktop, etc.).
 """
 
 import customtkinter as ctk
+from core.version import __version__
 
 # ASCII Artwork & Branding
 ASCII_ICON = [
@@ -59,7 +60,7 @@ def _setup_tags(tk_textbox) -> None:
 
 def render_startup_banner(
     textbox: ctk.CTkTextbox,
-    version: str = "1.0.0",
+    version: str = __version__,
     client_status: str = "Ready (LCU auto-detect)",
     obs_status: str = "Configured (WebSocket)",
 ) -> None:

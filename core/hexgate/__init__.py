@@ -10,10 +10,13 @@ Note: lcu_driver patching is applied explicitly inside engine.py, immediately
 before the Connector is instantiated. It is NOT triggered on package import.
 """
 
+from core.version import __version__
+
 from .config import BOT_CONFIG
 from .engine import start_bot, stop_bot
 
 __all__ = [
+    "__version__",
     "start_bot",
     "stop_bot",
     "BOT_CONFIG"

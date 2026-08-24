@@ -10,6 +10,7 @@ from gui.components.lol_settings_form import LolSettingsForm
 from gui.components.obs_settings_form import ObsSettingsForm
 from gui.components.tooltip import Tooltip
 from gui.entry_utils import set_entry_text
+from core.version import __version__
 
 SURFACE_COLOR = "#1e1e1e"
 BORDER_COLOR = "#333333"
@@ -31,8 +32,9 @@ def test_status_cards_style(tk_root):
     assert comp.stream_card.cget("border_width") == 1
 
 def test_status_footer_style(tk_root):
-    comp = StatusFooter(tk_root, version="1.0")
+    comp = StatusFooter(tk_root)
     assert comp.cget("fg_color") == SURFACE_COLOR
+    assert comp.version_label.cget("text") == f"v{__version__}"
 
 def test_youtube_panel_style(tk_root):
     comp = YouTubePanel(tk_root)

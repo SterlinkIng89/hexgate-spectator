@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from gui.components.collapsible_frame import CollapsibleFrame
-from gui.fonts import get_label_font
+from gui.components.tooltip import Tooltip
+from gui.fonts import get_label_font, get_small_font
 
 
 class LolSettingsForm(CollapsibleFrame):
@@ -9,6 +10,7 @@ class LolSettingsForm(CollapsibleFrame):
         super().__init__(master, **kwargs)
 
         label_font = get_label_font()
+        small_font = get_small_font()
 
         self.content_frame.columnconfigure(0, weight=1)
         self.content_frame.columnconfigure(1, weight=1)
@@ -23,8 +25,35 @@ class LolSettingsForm(CollapsibleFrame):
         self.entry_passwords = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: 123, test", font=label_font, width=140)
         self.entry_passwords.grid(row=0, column=3, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.content_frame, text="Camera Delay (s):", font=label_font).grid(row=1, column=0, padx=10, pady=4, sticky="w")
-        self.entry_delay = ctk.CTkEntry(self.content_frame, font=label_font, width=140)
+        delay_label_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        delay_label_frame.grid(row=1, column=0, padx=10, pady=4, sticky="w")
+
+        self.lbl_camera_delay = ctk.CTkLabel(
+            delay_label_frame,
+            text="Camera Delay (s):",
+            font=label_font,
+        )
+        self.lbl_camera_delay.pack(side="left")
+
+        self.help_camera_delay = ctk.CTkLabel(
+            delay_label_frame,
+            text="?",
+            font=small_font,
+            width=18,
+            height=18,
+            corner_radius=9,
+            fg_color="#333333",
+            text_color="#cccccc",
+            cursor="hand2",
+        )
+        self.help_camera_delay.pack(side="left", padx=(5, 0))
+
+        Tooltip(
+            self.help_camera_delay,
+            text="Controls the delay (in seconds) before activating spectator camera automation and hotkeys once the game enters the InProgress phase.",
+        )
+
+        self.entry_delay = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: 3", font=label_font, width=140)
         self.entry_delay.grid(row=1, column=1, padx=10, pady=4, sticky="we")
 
         ctk.CTkLabel(self.content_frame, text="Ignored Words:", font=label_font).grid(row=1, column=2, padx=10, pady=4, sticky="w")
@@ -59,7 +88,9 @@ class LolSettingsForm(CollapsibleFrame):
             self.entry_passwords.insert(0, str(val))
 
         self.entry_delay.delete(0, "end")
-        self.entry_delay.insert(0, str(config.get("camera_delay", "3")))
+        delay_val = config.get("camera_delay", "3")
+        if delay_val is not None and str(delay_val).strip() != "":
+            self.entry_delay.insert(0, str(delay_val))
 
         self.entry_ignored.delete(0, "end")
         val = config.get("ignored_words", "")
@@ -87,6 +118,8 @@ class LolSettingsForm(CollapsibleFrame):
         ignored = [w.strip() for w in ignored_raw.split(",")] if ignored_raw else []
         try:
             cam_delay = float(self.entry_delay.get())
+            if cam_delay < 0:
+                cam_delay = 3.0
         except ValueError:
             cam_delay = 3.0
 

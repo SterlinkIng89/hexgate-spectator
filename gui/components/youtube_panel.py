@@ -1,6 +1,7 @@
 import logging
 import customtkinter as ctk
 from core.youtube_manager import youtube_manager
+from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_status_font, get_sub_font, get_small_font
 from gui.components.surface_card import SurfaceCard
 
@@ -237,13 +238,10 @@ class YouTubePanel(SurfaceCard):
         title = config.get("yt_stream_title", "EST vs INTZ - {date}")
         if title == "[EST vs INTZ - {date}]":
             title = "EST vs INTZ - {date}"
-        self.entry_stream_title.delete(0, "end")
-        self.entry_stream_title.insert(0, str(title))
-        
+        set_entry_text(self.entry_stream_title, title)
+
         discord_webhook = config.get("discord_webhook_url", "")
-        self.entry_discord_webhook.delete(0, "end")
-        if discord_webhook:
-            self.entry_discord_webhook.insert(0, str(discord_webhook))
+        set_entry_text(self.entry_discord_webhook, discord_webhook)
 
         discord_enabled = config.get("discord_enabled", 1)
         if discord_enabled:

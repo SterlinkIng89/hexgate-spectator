@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from gui.components.collapsible_frame import CollapsibleFrame
 from gui.components.tooltip import Tooltip
+from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_small_font
 
 
@@ -77,25 +78,10 @@ class LolSettingsForm(CollapsibleFrame):
             w.configure(state=state)
 
     def load_config(self, config: dict) -> None:
-        self.entry_lobby.delete(0, "end")
-        val = config.get("lobby_name", "")
-        if val:
-            self.entry_lobby.insert(0, str(val))
-
-        self.entry_passwords.delete(0, "end")
-        val = config.get("passwords", "")
-        if val:
-            self.entry_passwords.insert(0, str(val))
-
-        self.entry_delay.delete(0, "end")
-        delay_val = config.get("camera_delay", "3")
-        if delay_val is not None and str(delay_val).strip() != "":
-            self.entry_delay.insert(0, str(delay_val))
-
-        self.entry_ignored.delete(0, "end")
-        val = config.get("ignored_words", "")
-        if val:
-            self.entry_ignored.insert(0, str(val))
+        set_entry_text(self.entry_lobby, config.get("lobby_name", ""))
+        set_entry_text(self.entry_passwords, config.get("passwords", ""))
+        set_entry_text(self.entry_delay, config.get("camera_delay", "3"))
+        set_entry_text(self.entry_ignored, config.get("ignored_words", ""))
 
         if config.get("invite_only", 0):
             self.check_invite_only.select()

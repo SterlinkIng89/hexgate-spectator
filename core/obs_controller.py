@@ -595,7 +595,22 @@ class OBSController:
         self._pending_stop_after_game = False
         threading.Thread(target=self.stop_stream, daemon=True, name="OBSGameEndWorker").start()
 
+    def on_bot_stop(self):
+        """
+        Triggered when the spectator bot is stopped by the user.
+        Stops the scheduler, terminates the stream if outside schedule window,
+        and disconnects from OBS WebSocket cleanly.
+        """
+        self.stop_scheduler()
+        if self.enabled:
+            if self.schedule_enabled and self.is_current_time_in_range():
+                logger.info("[OBS] Bot stopped, but leaving stream active due to schedule window.")
+            else:
+                self.stop_stream()
+            self.disconnect()
+
 
 # Global singleton instance
 obs_controller = OBSController()
+
 

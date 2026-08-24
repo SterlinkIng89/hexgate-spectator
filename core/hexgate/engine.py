@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 
 from core.obs_controller import obs_controller
+from core.youtube_manager import youtube_manager
 from core.power import prevent_system_sleep, allow_system_sleep
 from core.hexgate.config import BOT_CONFIG
 from core.hexgate.state import bot_state
@@ -135,6 +136,8 @@ def stop_bot():
 
     obs_controller.on_bot_stop()
     allow_system_sleep()
+
+    youtube_manager.complete_broadcast_async()
 
     bot_state.update_gui_status("Bot Stopped.")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -1,5 +1,7 @@
 import logging
+import threading
 import customtkinter as ctk
+from core.obs_controller import obs_controller
 from gui.components.collapsible_frame import CollapsibleFrame
 from gui.fonts import get_label_font, get_section_font
 
@@ -46,16 +48,36 @@ class ObsSettingsForm(CollapsibleFrame):
         self.entry_obs_password.grid(row=2, column=1, padx=10, pady=4, sticky="we")
 
         ctk.CTkLabel(self.content_frame, text="OBS Profile:", font=label_font).grid(row=2, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_profile = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: Scrims", font=label_font, width=140)
-        self.entry_obs_profile.grid(row=2, column=3, padx=10, pady=4, sticky="we")
+        self.combo_obs_profile = ctk.CTkComboBox(
+            self.content_frame,
+            values=[],
+            font=label_font,
+            dropdown_font=label_font,
+            width=140,
+            command=lambda _: self._notify_change(),
+        )
+        self.combo_obs_profile.grid(row=2, column=3, padx=10, pady=4, sticky="we")
 
         ctk.CTkLabel(self.content_frame, text="Scene Collection:", font=label_font).grid(row=3, column=0, padx=10, pady=4, sticky="w")
-        self.entry_obs_scene_collection = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: Scrims Layout", font=label_font, width=140)
-        self.entry_obs_scene_collection.grid(row=3, column=1, padx=10, pady=4, sticky="we")
+        self.combo_obs_scene_collection = ctk.CTkComboBox(
+            self.content_frame,
+            values=[],
+            font=label_font,
+            dropdown_font=label_font,
+            width=140,
+            command=lambda _: self._notify_change(),
+        )
+        self.combo_obs_scene_collection.grid(row=3, column=1, padx=10, pady=4, sticky="we")
 
-        ctk.CTkLabel(self.content_frame, text="Active Scene:", font=label_font).grid(row=3, column=2, padx=10, pady=4, sticky="w")
-        self.entry_obs_scene = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: InGame", font=label_font, width=140)
-        self.entry_obs_scene.grid(row=3, column=3, padx=10, pady=4, sticky="we")
+        self.btn_scan_obs = ctk.CTkButton(
+            self.content_frame,
+            text="Scan OBS",
+            font=label_font,
+            command=self._on_scan_obs,
+            width=140,
+            height=28,
+        )
+        self.btn_scan_obs.grid(row=3, column=2, columnspan=2, padx=10, pady=4, sticky="we")
 
         self.check_obs_schedule = ctk.CTkSwitch(
             self.content_frame,
@@ -107,9 +129,9 @@ class ObsSettingsForm(CollapsibleFrame):
             self.entry_obs_host,
             self.entry_obs_port,
             self.entry_obs_password,
-            self.entry_obs_profile,
-            self.entry_obs_scene_collection,
-            self.entry_obs_scene,
+            self.combo_obs_profile,
+            self.combo_obs_scene_collection,
+            self.btn_scan_obs,
             self.check_obs_auto_start,
             self.check_obs_auto_stop,
             self.check_obs_schedule,
@@ -248,15 +270,53 @@ class ObsSettingsForm(CollapsibleFrame):
             self.check_obs_enabled.configure(state="normal")
             self._on_toggle_obs_enabled()
 
+    def _on_scan_obs(self):
+        """Scans OBS for available Profiles and Scene Collections in a background thread."""
+        self.btn_scan_obs.configure(state="disabled", text="Scanning...")
+        obs_controller.configure(self.get_config())
+
+        def _worker():
+            try:
+                profiles = obs_controller.get_profiles()
+                scene_collections = obs_controller.get_scene_collections()
+                self.after(0, self._apply_scan_results, profiles, scene_collections)
+            except Exception as e:
+                logging.error(f"[OBS] Scan failed: {e}")
+                self.after(0, self._apply_scan_results, [], [])
+
+        threading.Thread(target=_worker, daemon=True, name="OBSScanWorker").start()
+
+    def _apply_scan_results(self, profiles: list[str], scene_collections: list[str]):
+        """Updates profile and scene collection combobox dropdowns with scanned values."""
+        current_profile = self.combo_obs_profile.get().strip()
+        current_collection = self.combo_obs_scene_collection.get().strip()
+
+        if profiles:
+            self.combo_obs_profile.configure(values=profiles)
+            if current_profile in profiles:
+                self._set_combo_value(self.combo_obs_profile, current_profile)
+            elif not current_profile and profiles:
+                self._set_combo_value(self.combo_obs_profile, profiles[0])
+
+        if scene_collections:
+            self.combo_obs_scene_collection.configure(values=scene_collections)
+            if current_collection in scene_collections:
+                self._set_combo_value(self.combo_obs_scene_collection, current_collection)
+            elif not current_collection and scene_collections:
+                self._set_combo_value(self.combo_obs_scene_collection, scene_collections[0])
+
+        self.btn_scan_obs.configure(
+            state="normal" if self.check_obs_enabled.get() == 1 else "disabled",
+            text="Scan OBS",
+        )
+        self._notify_change()
+
     def load_config(self, config: dict) -> None:
         """Loads OBS settings into form widgets."""
         text_entries = [
             ("obs_host", self.entry_obs_host),
             ("obs_port", self.entry_obs_port),
             ("obs_password", self.entry_obs_password),
-            ("obs_profile", self.entry_obs_profile),
-            ("obs_scene_collection", self.entry_obs_scene_collection),
-            ("obs_scene", self.entry_obs_scene),
         ]
 
         for key, widget in text_entries:
@@ -264,6 +324,14 @@ class ObsSettingsForm(CollapsibleFrame):
             val = config.get(key, "")
             if val:
                 widget.insert(0, str(val))
+
+        prof_val = str(config.get("obs_profile", "") or "").strip()
+        self.combo_obs_profile.configure(values=[prof_val] if prof_val else [])
+        self._set_combo_value(self.combo_obs_profile, prof_val)
+
+        sc_val = str(config.get("obs_scene_collection", "") or "").strip()
+        self.combo_obs_scene_collection.configure(values=[sc_val] if sc_val else [])
+        self._set_combo_value(self.combo_obs_scene_collection, sc_val)
 
         checkboxes = [
             ("obs_enabled", self.check_obs_enabled),
@@ -297,9 +365,8 @@ class ObsSettingsForm(CollapsibleFrame):
             "obs_host": self.entry_obs_host.get().strip(),
             "obs_port": self.entry_obs_port.get().strip(),
             "obs_password": self.entry_obs_password.get(),
-            "obs_profile": self.entry_obs_profile.get().strip(),
-            "obs_scene_collection": self.entry_obs_scene_collection.get().strip(),
-            "obs_scene": self.entry_obs_scene.get().strip(),
+            "obs_profile": self.combo_obs_profile.get().strip(),
+            "obs_scene_collection": self.combo_obs_scene_collection.get().strip(),
             "obs_auto_start": self.check_obs_auto_start.get() == 1,
             "obs_auto_stop": self.check_obs_auto_stop.get() == 1,
             "obs_schedule_enabled": self.check_obs_schedule.get() == 1,

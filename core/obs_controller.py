@@ -49,7 +49,6 @@ class OBSController:
         self.enabled = False
         self.profile = ""
         self.scene_collection = ""
-        self.scene = ""
         self.auto_start = True
         self.auto_stop = True
         self.schedule_enabled = True
@@ -78,7 +77,6 @@ class OBSController:
             self.password = config_dict.get("obs_password", "") or ""
             self.profile = config_dict.get("obs_profile", "").strip()
             self.scene_collection = config_dict.get("obs_scene_collection", "").strip()
-            self.scene = config_dict.get("obs_scene", "").strip()
             self.auto_start = bool(config_dict.get("obs_auto_start", True))
             self.auto_stop = bool(config_dict.get("obs_auto_stop", True))
             self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", True))
@@ -238,6 +236,42 @@ class OBSController:
                 self.cached_status = res
                 return res
 
+    def get_profiles(self) -> list[str]:
+        """Fetches list of available OBS Profiles."""
+        with self._lock:
+            if not self._ensure_connected():
+                return []
+            t0 = time.perf_counter()
+            try:
+                res = self._client.get_profile_list()
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.debug(f"[OBS] get_profile_list completed in {elapsed_ms:.1f}ms")
+                return list(getattr(res, "profiles", []) or [])
+            except Exception as e:
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.warning(f"[OBS] Error fetching profiles ({elapsed_ms:.1f}ms): {e}")
+                if _is_obs_unreachable_error(e):
+                    self.disconnect()
+                return []
+
+    def get_scene_collections(self) -> list[str]:
+        """Fetches list of available OBS Scene Collections."""
+        with self._lock:
+            if not self._ensure_connected():
+                return []
+            t0 = time.perf_counter()
+            try:
+                res = self._client.get_scene_collection_list()
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.debug(f"[OBS] get_scene_collection_list completed in {elapsed_ms:.1f}ms")
+                return list(getattr(res, "scene_collections", []) or [])
+            except Exception as e:
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.warning(f"[OBS] Error fetching scene collections ({elapsed_ms:.1f}ms): {e}")
+                if _is_obs_unreachable_error(e):
+                    self.disconnect()
+                return []
+
     def set_profile(self, name: str) -> bool:
         """Switches the current OBS Profile."""
         if not name:
@@ -346,12 +380,8 @@ class OBSController:
                     self.set_profile(self.profile)
                 if self.scene_collection:
                     self.set_scene_collection(self.scene_collection)
-                if self.scene:
-                    self.set_scene(self.scene)
                 self.start_stream()
             else:
-                if self.scene:
-                    self.set_scene(self.scene)
                 logger.info("[OBS] Stream is already active. Skipping start_stream.")
                 
             elapsed_ms = (time.perf_counter() - t0) * 1000

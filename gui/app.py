@@ -61,7 +61,6 @@ class App(ctk.CTk):
         "obs_password": "",
         "obs_profile": "",
         "obs_scene_collection": "",
-        "obs_scene": "",
         "obs_auto_start": 1,
         "obs_auto_stop": 1,
         "obs_schedule_enabled": 1,

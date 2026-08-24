@@ -30,6 +30,7 @@ class OBSController:
     and graceful error recovery when OBS is offline.
     """
     RECONNECT_COOLDOWN = 10.0  # Minimum seconds between connection retries when OBS is offline
+    START_RETRY_COOLDOWN = 10.0  # Minimum seconds between scheduled stream start retries
 
     def __init__(self):
         self._client = None
@@ -49,9 +50,9 @@ class OBSController:
         self._pending_stop_after_game = False
         self._scheduler_thread = None
         self._stop_scheduler_event = threading.Event()
-        self._last_schedule_start_day = None
-        self._last_schedule_stop_day = None
         self._last_connect_attempt = 0.0
+        self._last_start_attempt = 0.0
+        self._is_starting = False
         self.stream_started_at = None
         self.stream_stopped_at = None
         self.cached_status = {"active": False, "timecode": "", "reconnecting": False, "connected": False}
@@ -283,30 +284,38 @@ class OBSController:
 
     def _apply_scene_and_start(self):
         """
-        Applies the configured profile, scene collection and scene in order,
-        then starts the stream. Shared by on_game_start and the scheduler.
+        Applies configured profile, scene collection, and scene before starting stream.
+        Guarded against concurrent duplicate executions.
         """
-        t0 = time.perf_counter()
-        
-        status = self.get_stream_status()
-        is_active = status.get("active", False)
+        with self._lock:
+            if self._is_starting:
+                logger.debug("[OBS] _apply_scene_and_start already in progress. Skipping.")
+                return
+            self._is_starting = True
 
-        if not is_active:
-            if self.profile:
-                self.set_profile(self.profile)
-            if self.scene_collection:
-                self.set_scene_collection(self.scene_collection)
+        t0 = time.perf_counter()
+        try:
+            status = self.get_stream_status()
+            is_active = status.get("active", False)
+
+            if not is_active:
+                if self.profile:
+                    self.set_profile(self.profile)
+                if self.scene_collection:
+                    self.set_scene_collection(self.scene_collection)
+                if self.scene:
+                    self.set_scene(self.scene)
+                self.start_stream()
+            else:
+                if self.scene:
+                    self.set_scene(self.scene)
+                logger.info("[OBS] Stream is already active. Skipping start_stream.")
                 
-        if self.scene:
-            self.set_scene(self.scene)
-            
-        if not is_active:
-            self.start_stream()
-        else:
-            logger.info("[OBS] Stream is already active. Skipping start_stream.")
-            
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(f"[OBS] _apply_scene_and_start completed in {elapsed_ms:.1f}ms")
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            logger.info(f"[OBS] _apply_scene_and_start completed in {elapsed_ms:.1f}ms")
+        finally:
+            with self._lock:
+                self._is_starting = False
 
     def is_current_time_in_range(self) -> bool:
         """Checks if the current local time falls within the configured start and stop times."""
@@ -336,7 +345,7 @@ class OBSController:
             t.start()
 
     def _schedule_loop(self):
-        """Background loop that fires scheduled start/stop actions and polls stream state."""
+        """Background loop that evaluates schedule window state and manages stream lifecycle."""
         logger.info(
             f"[OBS Schedule] Scheduler active "
             f"(Start: {self.schedule_start_time or 'Any'}, "
@@ -348,35 +357,46 @@ class OBSController:
                     if self._client is not None:
                         self.get_stream_status()
 
-                    if self.schedule_enabled:
-                        now_dt = datetime.now()
-                        now_str = now_dt.strftime("%H:%M")
-                        today_str = now_dt.strftime("%Y-%m-%d")
+                    if self.schedule_enabled and self.schedule_start_time and self.schedule_stop_time:
+                        in_range = self.is_current_time_in_range()
+                        is_active = self.cached_status.get("active", False)
+                        now_ts = time.time()
 
-                        if self.schedule_start_time and now_str == self.schedule_start_time:
-                            if self._last_schedule_start_day != today_str:
-                                self._last_schedule_start_day = today_str
-                                self._pending_stop_after_game = False
-                                logger.info(f"[OBS Schedule] Scheduled start time reached ({now_str}). Starting stream...")
-                                threading.Thread(target=self._apply_scene_and_start, daemon=True).start()
-
-                        if self.schedule_stop_time and now_str == self.schedule_stop_time:
-                            if self._last_schedule_stop_day != today_str:
-                                self._last_schedule_stop_day = today_str
-                                if self.is_game_in_progress():
+                        if in_range:
+                            self._pending_stop_after_game = False
+                            if not is_active and not self._is_starting:
+                                if (now_ts - self._last_start_attempt) >= self.START_RETRY_COOLDOWN:
+                                    self._last_start_attempt = now_ts
+                                    logger.info(
+                                        f"[OBS Schedule] In active schedule window "
+                                        f"({self.schedule_start_time} - {self.schedule_stop_time}) "
+                                        f"and stream is inactive. Starting stream..."
+                                    )
+                                    threading.Thread(
+                                        target=self._apply_scene_and_start,
+                                        daemon=True,
+                                        name="OBSScheduledStartWorker"
+                                    ).start()
+                        else:
+                            if self.is_game_in_progress():
+                                if is_active and not self._pending_stop_after_game:
                                     self._pending_stop_after_game = True
                                     logger.info(
-                                        f"[OBS Schedule] Scheduled stop time reached ({now_str}), but a game is currently in progress. "
-                                        f"Postponing stream stop until match finishes."
+                                        f"[OBS Schedule] Outside scheduled window "
+                                        f"({self.schedule_start_time} - {self.schedule_stop_time}), "
+                                        f"but a game is currently in progress. Postponing stream stop until match finishes."
                                     )
-                                else:
-                                    logger.info(f"[OBS Schedule] Scheduled stop time reached ({now_str}). Stopping stream...")
-                                    threading.Thread(target=self.stop_stream, daemon=True).start()
-
-                        if self._pending_stop_after_game and not self.is_game_in_progress():
-                            logger.info("[OBS Schedule] Active game concluded after scheduled stop time. Stopping stream now...")
-                            self._pending_stop_after_game = False
-                            threading.Thread(target=self.stop_stream, daemon=True).start()
+                            elif is_active or self._pending_stop_after_game:
+                                logger.info(
+                                    f"[OBS Schedule] Outside scheduled window "
+                                    f"({self.schedule_start_time} - {self.schedule_stop_time}). Stopping stream..."
+                                )
+                                self._pending_stop_after_game = False
+                                threading.Thread(
+                                    target=self.stop_stream,
+                                    daemon=True,
+                                    name="OBSScheduledStopWorker"
+                                ).start()
 
             except Exception as e:
                 logger.warning(f"[OBS Schedule] Loop error: {e}")

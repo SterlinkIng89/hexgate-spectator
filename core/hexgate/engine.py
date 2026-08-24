@@ -134,7 +134,7 @@ def stop_bot():
     bot_state.is_searching = False
 
     obs_controller.stop_scheduler()
-    obs_controller.on_game_end()
+    obs_controller.stop_stream()
     obs_controller.disconnect()
     allow_system_sleep()
 

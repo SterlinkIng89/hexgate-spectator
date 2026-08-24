@@ -8,8 +8,6 @@ class ObsSettingsForm(CollapsibleFrame):
     def __init__(self, master, on_config_changed=None, **kwargs):
         kwargs.setdefault("title", "OBS Integration Settings")
         kwargs.setdefault("collapsed", True)
-        kwargs.setdefault("border_width", 1)
-        kwargs.setdefault("border_color", "#333333")
         super().__init__(master, **kwargs)
 
         self._on_config_changed = on_config_changed

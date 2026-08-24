@@ -6,6 +6,7 @@ from gui.components.status_cards import StatusCards
 from gui.components.lol_settings_form import LolSettingsForm
 from gui.components.obs_settings_form import ObsSettingsForm
 from gui.components.youtube_panel import YouTubePanel
+from gui.components.surface_card import SurfaceCard
 
 __all__ = [
     "CollapsibleFrame",
@@ -16,4 +17,5 @@ __all__ = [
     "LolSettingsForm",
     "ObsSettingsForm",
     "YouTubePanel",
+    "SurfaceCard",
 ]

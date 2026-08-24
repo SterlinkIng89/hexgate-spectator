@@ -2,10 +2,11 @@ import logging
 import customtkinter as ctk
 from core.youtube_manager import youtube_manager
 from gui.fonts import get_label_font, get_status_font, get_sub_font, get_small_font
+from gui.components.surface_card import SurfaceCard
 
 logger = logging.getLogger(__name__)
 
-class YouTubePanel(ctk.CTkFrame):
+class YouTubePanel(SurfaceCard):
     """
     Control card for YouTube Live Stream integration:
     - OAuth account status & connect/disconnect button.
@@ -13,10 +14,6 @@ class YouTubePanel(ctk.CTkFrame):
     - Live watch URL indicator with one-click copy button.
     """
     def __init__(self, master, on_config_changed=None, **kwargs):
-        kwargs.setdefault("fg_color", "#1e1e1e")
-        kwargs.setdefault("border_width", 1)
-        kwargs.setdefault("border_color", "#333333")
-        kwargs.setdefault("corner_radius", 8)
         super().__init__(master, **kwargs)
 
         self._on_config_changed = on_config_changed

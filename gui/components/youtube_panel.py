@@ -80,14 +80,16 @@ class YouTubePanel(ctk.CTkFrame):
         self.discord_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.discord_frame.pack(fill="x", padx=12, pady=(0, 6))
 
+        self.lbl_discord = ctk.CTkLabel(self.discord_frame, text="Discord:", font=label_font, width=90, anchor="w")
+        self.lbl_discord.pack(side="left", padx=(0, 6))
+
         self.check_discord_enabled = ctk.CTkSwitch(
             self.discord_frame,
-            text="Discord:",
-            font=label_font,
-            width=90,
+            text="Post link",
+            font=sub_font,
             command=self._on_toggle_discord_enabled
         )
-        self.check_discord_enabled.pack(side="left", padx=(0, 6))
+        self.check_discord_enabled.pack(side="right", padx=(8, 0))
 
         self.entry_discord_webhook = ctk.CTkEntry(
             self.discord_frame,

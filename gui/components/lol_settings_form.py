@@ -6,8 +6,6 @@ from gui.fonts import get_label_font
 class LolSettingsForm(CollapsibleFrame):
     def __init__(self, master, **kwargs):
         kwargs.setdefault("title", "League Client Settings")
-        kwargs.setdefault("border_width", 1)
-        kwargs.setdefault("border_color", "#333333")
         super().__init__(master, **kwargs)
 
         label_font = get_label_font()

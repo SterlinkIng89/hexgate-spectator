@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from gui.fonts import get_label_font, get_status_font, get_sub_font
-
+from gui.components.surface_card import SurfaceCard
 
 class StatusCards(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
@@ -15,7 +15,7 @@ class StatusCards(ctk.CTkFrame):
         self.columnconfigure(1, weight=1, uniform="status_cards")
 
         # Left Card: LoL Bot Status
-        self.bot_card = ctk.CTkFrame(self, fg_color="#1e1e1e", border_width=1, border_color="#333333", corner_radius=8)
+        self.bot_card = SurfaceCard(self)
         self.bot_card.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
 
         self.bot_status_header = ctk.CTkFrame(self.bot_card, fg_color="transparent")
@@ -31,7 +31,7 @@ class StatusCards(ctk.CTkFrame):
         self.bot_detail_label.pack(pady=(0, 8), padx=8, fill="x")
 
         # Right Card: OBS / Stream Status
-        self.stream_card = ctk.CTkFrame(self, fg_color="#1e1e1e", border_width=1, border_color="#333333", corner_radius=8)
+        self.stream_card = SurfaceCard(self)
         self.stream_card.grid(row=0, column=1, padx=(5, 0), sticky="nsew")
 
         self.stream_status_header = ctk.CTkFrame(self.stream_card, fg_color="transparent")

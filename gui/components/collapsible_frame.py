@@ -1,7 +1,8 @@
 import customtkinter as ctk
 from gui.fonts import get_section_font
+from gui.components.surface_card import SurfaceCard
 
-class CollapsibleFrame(ctk.CTkFrame):
+class CollapsibleFrame(SurfaceCard):
     def __init__(self, master, title: str, collapsed: bool = False, **kwargs):
         super().__init__(master, **kwargs)
         self.title_text = title

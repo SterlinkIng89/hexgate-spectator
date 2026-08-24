@@ -5,9 +5,9 @@ from gui.fonts import get_small_font
 
 class StatusFooter(ctk.CTkFrame):
     def __init__(self, master, version: str = "1.0.0", refresh_ms: int = 1000, **kwargs):
-        kwargs.setdefault("fg_color", "#161616")
+        kwargs.setdefault("fg_color", "#1e1e1e")
         kwargs.setdefault("border_width", 1)
-        kwargs.setdefault("border_color", "#2a2a2a")
+        kwargs.setdefault("border_color", "#333333")
         kwargs.setdefault("corner_radius", 0)
         kwargs.setdefault("height", 28)
         super().__init__(master, **kwargs)

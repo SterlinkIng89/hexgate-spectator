@@ -1,6 +1,5 @@
 import pytest
-import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from core.hexgate.gameflow import watchdog
 from core.hexgate.config import GAME_FREEZE_TIMEOUT
 

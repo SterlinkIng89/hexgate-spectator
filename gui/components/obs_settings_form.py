@@ -3,6 +3,7 @@ import threading
 import customtkinter as ctk
 from core.obs_controller import obs_controller
 from gui.components.collapsible_frame import CollapsibleFrame
+from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_section_font
 
 
@@ -320,10 +321,7 @@ class ObsSettingsForm(CollapsibleFrame):
         ]
 
         for key, widget in text_entries:
-            widget.delete(0, "end")
-            val = config.get(key, "")
-            if val:
-                widget.insert(0, str(val))
+            set_entry_text(widget, config.get(key, ""))
 
         prof_val = str(config.get("obs_profile", "") or "").strip()
         self.combo_obs_profile.configure(values=[prof_val] if prof_val else [])

@@ -9,6 +9,7 @@ from gui.components.status_footer import StatusFooter
 from gui.components.lol_settings_form import LolSettingsForm
 from gui.components.obs_settings_form import ObsSettingsForm
 from gui.components.tooltip import Tooltip
+from gui.entry_utils import set_entry_text
 
 SURFACE_COLOR = "#1e1e1e"
 BORDER_COLOR = "#333333"
@@ -160,5 +161,128 @@ def test_obs_settings_form_scan_results_application(tk_root):
     assert form.combo_obs_scene_collection.cget("values") == scenes
     assert form.combo_obs_scene_collection.get() == "Main Overlay"
     assert form.btn_scan_obs.cget("text") == "Scan OBS"
+
+
+def test_set_entry_text_helper_behavior(tk_root):
+    entry = ctk.CTkEntry(tk_root, placeholder_text="Default Placeholder")
+    assert entry._placeholder_text_active is True
+    assert entry._entry.get() == "Default Placeholder"
+
+    # Set non-empty text
+    set_entry_text(entry, "Custom Value")
+    assert entry._placeholder_text_active is False
+    assert entry.get() == "Custom Value"
+    assert entry._entry.get() == "Custom Value"
+
+    # Reset to empty string
+    set_entry_text(entry, "")
+    assert entry._placeholder_text_active is True
+    assert entry.get() == ""
+    assert entry._entry.get() == "Default Placeholder"
+
+    # Reset to None
+    set_entry_text(entry, None)
+    assert entry._placeholder_text_active is True
+    assert entry.get() == ""
+    assert entry._entry.get() == "Default Placeholder"
+
+
+def test_lol_settings_form_placeholders_visibility_on_empty(tk_root):
+    form = LolSettingsForm(tk_root)
+
+    # Initial state
+    assert form.entry_lobby._placeholder_text_active is True
+    assert form.entry_lobby._entry.get() == "e.g.: est, vks"
+    assert form.entry_passwords._placeholder_text_active is True
+    assert form.entry_passwords._entry.get() == "e.g.: 123, test"
+    assert form.entry_delay._placeholder_text_active is True
+    assert form.entry_delay._entry.get() == "e.g.: 3"
+    assert form.entry_ignored._placeholder_text_active is True
+    assert form.entry_ignored._entry.get() == "e.g.: Academy, AC"
+
+    # Load empty config
+    form.load_config({
+        "lobby_name": "",
+        "passwords": "",
+        "camera_delay": "",
+        "ignored_words": "",
+    })
+
+    assert form.entry_lobby._placeholder_text_active is True
+    assert form.entry_lobby._entry.get() == "e.g.: est, vks"
+    assert form.entry_passwords._placeholder_text_active is True
+    assert form.entry_passwords._entry.get() == "e.g.: 123, test"
+    assert form.entry_delay._placeholder_text_active is True
+    assert form.entry_delay._entry.get() == "e.g.: 3"
+    assert form.entry_ignored._placeholder_text_active is True
+    assert form.entry_ignored._entry.get() == "e.g.: Academy, AC"
+
+    # Load populated config
+    form.load_config({
+        "lobby_name": "MyLobby",
+        "passwords": "abc",
+        "camera_delay": "5",
+        "ignored_words": "test",
+    })
+
+    assert form.entry_lobby._placeholder_text_active is False
+    assert form.entry_lobby.get() == "MyLobby"
+    assert form.entry_passwords._placeholder_text_active is False
+    assert form.entry_passwords.get() == "abc"
+    assert form.entry_delay._placeholder_text_active is False
+    assert form.entry_delay.get() == "5"
+    assert form.entry_ignored._placeholder_text_active is False
+    assert form.entry_ignored.get() == "test"
+
+    # Clear back to empty config
+    form.load_config({})
+    assert form.entry_lobby._placeholder_text_active is True
+    assert form.entry_lobby._entry.get() == "e.g.: est, vks"
+    assert form.entry_passwords._placeholder_text_active is True
+    assert form.entry_passwords._entry.get() == "e.g.: 123, test"
+    assert form.entry_ignored._placeholder_text_active is True
+    assert form.entry_ignored._entry.get() == "e.g.: Academy, AC"
+
+
+def test_obs_settings_form_placeholders_visibility_on_empty(tk_root):
+    form = ObsSettingsForm(tk_root)
+
+    # Initial state
+    assert form.entry_obs_host._placeholder_text_active is True
+    assert form.entry_obs_host._entry.get() == "localhost"
+    assert form.entry_obs_port._placeholder_text_active is True
+    assert form.entry_obs_port._entry.get() == "4455"
+    assert form.entry_obs_password._placeholder_text_active is True
+    assert form.entry_obs_password._entry.get() == "Optional password"
+
+    # Load empty config
+    form.load_config({
+        "obs_host": "",
+        "obs_port": "",
+        "obs_password": "",
+    })
+
+    assert form.entry_obs_host._placeholder_text_active is True
+    assert form.entry_obs_host._entry.get() == "localhost"
+    assert form.entry_obs_port._placeholder_text_active is True
+    assert form.entry_obs_port._entry.get() == "4455"
+    assert form.entry_obs_password._placeholder_text_active is True
+    assert form.entry_obs_password._entry.get() == "Optional password"
+
+
+def test_youtube_panel_placeholders_visibility_on_empty(tk_root):
+    panel = YouTubePanel(tk_root)
+
+    # Load empty/cleared config
+    panel.load_config({
+        "yt_stream_title": "",
+        "discord_webhook_url": "",
+    })
+
+    assert panel.entry_stream_title._placeholder_text_active is True
+    assert panel.entry_stream_title._entry.get() == "e.g. EST vs INTZ - {date}"
+    assert panel.entry_discord_webhook._placeholder_text_active is True
+    assert panel.entry_discord_webhook._entry.get() == "Optional: Webhook URL to auto-post stream link"
+
 
 

@@ -118,3 +118,47 @@ def test_lol_settings_form_runtime_config_validation(tk_root):
     form.entry_delay.insert(0, "-5")
     assert form.get_runtime_config()["camera_delay"] == 3.0
 
+
+def test_obs_settings_form_structure_and_comboboxes(tk_root):
+    form = ObsSettingsForm(tk_root)
+    assert not hasattr(form, "entry_obs_scene")
+    assert hasattr(form, "combo_obs_profile")
+    assert hasattr(form, "combo_obs_scene_collection")
+    assert hasattr(form, "btn_scan_obs")
+    assert form.btn_scan_obs.cget("text") == "Scan OBS"
+
+    # Test load_config and get_config
+    form.load_config({
+        "obs_enabled": 1,
+        "obs_host": "127.0.0.1",
+        "obs_port": "4455",
+        "obs_password": "pass",
+        "obs_profile": "Scrims",
+        "obs_scene_collection": "Scrims Layout",
+    })
+
+    assert form.combo_obs_profile.get() == "Scrims"
+    assert form.combo_obs_scene_collection.get() == "Scrims Layout"
+    cfg = form.get_config()
+    assert cfg["obs_profile"] == "Scrims"
+    assert cfg["obs_scene_collection"] == "Scrims Layout"
+    assert "obs_scene" not in cfg
+
+
+def test_obs_settings_form_scan_results_application(tk_root):
+    form = ObsSettingsForm(tk_root)
+    form.combo_obs_profile.set("")
+    form.combo_obs_scene_collection.set("")
+
+    profiles = ["Default", "1080p Stream", "Recording"]
+    scenes = ["Main Overlay", "Secondary Layout"]
+
+    form._apply_scan_results(profiles, scenes)
+
+    assert form.combo_obs_profile.cget("values") == profiles
+    assert form.combo_obs_profile.get() == "Default"
+    assert form.combo_obs_scene_collection.cget("values") == scenes
+    assert form.combo_obs_scene_collection.get() == "Main Overlay"
+    assert form.btn_scan_obs.cget("text") == "Scan OBS"
+
+

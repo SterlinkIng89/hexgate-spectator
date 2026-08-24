@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 import customtkinter as ctk
 from gui.components.status_cards import StatusCards
 from gui.components.youtube_panel import YouTubePanel
@@ -53,3 +54,24 @@ def test_settings_forms_style(tk_root):
     assert comp2.cget("fg_color") == SURFACE_COLOR
     assert comp2.cget("border_color") == BORDER_COLOR
     assert comp2.cget("border_width") == 1
+
+
+def test_youtube_panel_auth_state_displays_channel_name(tk_root):
+    with patch("gui.components.youtube_panel.youtube_manager") as mock_yt:
+        mock_yt.is_authenticated.return_value = True
+        mock_yt.channel_name = "Hexgate Official"
+        comp = YouTubePanel(tk_root)
+        comp.refresh_auth_state()
+        assert comp.account_label.cget("text") == "YouTube: Hexgate Official"
+        assert comp.btn_auth.cget("text") == "Disconnect"
+
+
+def test_youtube_panel_auth_state_displays_disconnected(tk_root):
+    with patch("gui.components.youtube_panel.youtube_manager") as mock_yt:
+        mock_yt.is_authenticated.return_value = False
+        mock_yt.authenticate.return_value = False
+        comp = YouTubePanel(tk_root)
+        comp.refresh_auth_state()
+        assert comp.account_label.cget("text") == "YouTube: Disconnected"
+        assert comp.btn_auth.cget("text") == "Link Account"
+

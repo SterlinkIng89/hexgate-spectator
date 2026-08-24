@@ -22,6 +22,7 @@ class YouTubeManager:
     def __init__(self):
         self.client_secret_file = os.path.join(APPDATA_DIR, 'client_secret.json')
         self.token_file = os.path.join(APPDATA_DIR, 'yt_token.json')
+        self.channel_cache_file = os.path.join(APPDATA_DIR, 'yt_channel.json')
         self.credentials = None
         self.youtube = None
         self.channel_name = None
@@ -42,8 +43,27 @@ class YouTubeManager:
                 self._load_credentials()
             return bool(self.credentials and self.credentials.valid)
 
+    def _read_channel_cache(self) -> str | None:
+        """Reads cached channel name from disk if available."""
+        if os.path.exists(self.channel_cache_file):
+            try:
+                with open(self.channel_cache_file, 'r', encoding='utf-8') as cf:
+                    return json.load(cf).get('channel_name')
+            except Exception as e:
+                logger.debug(f"[YouTube] Error reading channel cache: {e}")
+        return None
+
+    def _save_channel_cache(self, channel_name: str):
+        """Persists channel name to cache file on disk."""
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.channel_cache_file)), exist_ok=True)
+            with open(self.channel_cache_file, 'w', encoding='utf-8') as cf:
+                json.dump({"channel_name": channel_name}, cf)
+        except Exception as e:
+            logger.warning(f"[YouTube] Failed to write channel cache: {e}")
+
     def _load_credentials(self):
-        """Loads saved OAuth credentials from token file if present."""
+        """Loads saved OAuth credentials from token file if present and loads/resolves channel name."""
         if os.path.exists(self.token_file):
             try:
                 self.credentials = Credentials.from_authorized_user_file(self.token_file, SCOPES)
@@ -55,8 +75,15 @@ class YouTubeManager:
                     except Exception as e:
                         logger.warning(f"[YouTube] Token refresh error: {e}")
                         self.credentials = None
-                if self.credentials and self.credentials.valid and not self.youtube:
-                    self.youtube = build('youtube', 'v3', credentials=self.credentials)
+                
+                if self.credentials and self.credentials.valid:
+                    self.channel_name = self._read_channel_cache()
+
+                    if not self.youtube:
+                        self.youtube = build('youtube', 'v3', credentials=self.credentials)
+
+                    if not self.channel_name and self.youtube:
+                        self._fetch_channel_name()
             except Exception as e:
                 logger.error(f"[YouTube] Error loading credentials: {e}")
                 self.credentials = None
@@ -91,7 +118,8 @@ class YouTubeManager:
                         token.write(self.credentials.to_json())
 
                 if self.credentials and self.credentials.valid:
-                    self.youtube = build('youtube', 'v3', credentials=self.credentials)
+                    if not self.youtube:
+                        self.youtube = build('youtube', 'v3', credentials=self.credentials)
                     self._fetch_channel_name()
                     success = True
                     result_msg = self.channel_name or "Connected"
@@ -116,24 +144,24 @@ class YouTubeManager:
             return self.is_authenticated()
 
     def _fetch_channel_name(self):
-        """Fetches the channel title for the authenticated user."""
+        """Fetches and caches the channel title for the authenticated user."""
         if not self.youtube:
             return
         try:
             request = self.youtube.channels().list(part="snippet", mine=True)
             response = request.execute()
             items = response.get('items', [])
-            if items:
-                self.channel_name = items[0]['snippet'].get('title', 'YouTube Channel')
-                logger.info(f"[YouTube] Authenticated as channel: {self.channel_name}")
-            else:
-                self.channel_name = "YouTube Channel"
+            snippet = items[0].get('snippet', {}) if items else {}
+            self.channel_name = snippet.get('title') or snippet.get('customUrl') or "YouTube Channel"
+            logger.info(f"[YouTube] Authenticated as channel: {self.channel_name}")
+            self._save_channel_cache(self.channel_name)
         except Exception as e:
             logger.error(f"[YouTube] Failed to fetch channel title: {e}")
-            self.channel_name = "YouTube Channel"
+            if not self.channel_name:
+                self.channel_name = "YouTube Channel"
 
     def logout(self):
-        """Clears stored credentials and resets state."""
+        """Clears stored credentials, cached metadata, and resets state."""
         with self._lock:
             self.credentials = None
             self.youtube = None
@@ -141,12 +169,13 @@ class YouTubeManager:
             self.active_broadcast_id = None
             self.active_stream_url = None
             self.active_stream_title = None
-            if os.path.exists(self.token_file):
-                try:
-                    os.remove(self.token_file)
-                    logger.info("[YouTube] Token removed. Logged out successfully.")
-                except Exception as e:
-                    logger.warning(f"[YouTube] Failed to remove token file: {e}")
+            for filepath in [self.token_file, self.channel_cache_file]:
+                if os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                        logger.info(f"[YouTube] Removed {filepath}.")
+                    except Exception as e:
+                        logger.warning(f"[YouTube] Failed to remove {filepath}: {e}")
 
     @staticmethod
     def format_title(title_template: str) -> str:

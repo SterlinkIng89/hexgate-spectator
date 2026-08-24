@@ -1,4 +1,5 @@
 import os
+import json
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 import pytest
@@ -93,3 +94,72 @@ def test_transition_and_complete():
         part="status"
     )
     assert mgr.active_broadcast_id is None
+
+
+def test_fetch_channel_name_and_caching(tmp_path):
+    mgr = YouTubeManager()
+    mgr.channel_cache_file = str(tmp_path / "yt_channel.json")
+    
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+    
+    mock_channels = MagicMock()
+    mock_channels.execute.return_value = {
+        "items": [
+            {
+                "snippet": {
+                    "title": "Sterlink Esports",
+                    "customUrl": "@sterlinkesports"
+                }
+            }
+        ]
+    }
+    mock_yt.channels().list.return_value = mock_channels
+
+    mgr._fetch_channel_name()
+
+    assert mgr.channel_name == "Sterlink Esports"
+    assert os.path.exists(mgr.channel_cache_file)
+    with open(mgr.channel_cache_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    assert data.get("channel_name") == "Sterlink Esports"
+
+
+def test_load_credentials_loads_cached_channel(tmp_path):
+    mgr = YouTubeManager()
+    cache_file = tmp_path / "yt_channel.json"
+    token_file = tmp_path / "yt_token.json"
+    token_file.write_text("{}", encoding="utf-8")
+    cache_file.write_text('{"channel_name": "Cached Esports"}', encoding="utf-8")
+    
+    mgr.token_file = str(token_file)
+    mgr.channel_cache_file = str(cache_file)
+
+    mock_creds = MagicMock()
+    mock_creds.expired = False
+    mock_creds.valid = True
+
+    with patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds), \
+         patch("core.youtube_manager.build") as mock_build:
+        mgr._load_credentials()
+
+    assert mgr.channel_name == "Cached Esports"
+
+
+def test_logout_clears_channel_cache(tmp_path):
+    mgr = YouTubeManager()
+    cache_file = tmp_path / "yt_channel.json"
+    token_file = tmp_path / "yt_token.json"
+    cache_file.write_text('{"channel_name": "Test Channel"}', encoding="utf-8")
+    token_file.write_text("{}", encoding="utf-8")
+
+    mgr.channel_cache_file = str(cache_file)
+    mgr.token_file = str(token_file)
+    mgr.channel_name = "Test Channel"
+
+    mgr.logout()
+
+    assert mgr.channel_name is None
+    assert not os.path.exists(mgr.channel_cache_file)
+    assert not os.path.exists(mgr.token_file)
+

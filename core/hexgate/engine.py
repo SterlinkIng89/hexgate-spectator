@@ -134,7 +134,12 @@ def stop_bot():
     bot_state.is_searching = False
 
     obs_controller.stop_scheduler()
-    obs_controller.stop_stream()
+    
+    if obs_controller.schedule_enabled and obs_controller.is_current_time_in_range():
+        logger.info("[OBS] Bot stopped, but leaving stream active due to schedule window.")
+    else:
+        obs_controller.stop_stream()
+        
     obs_controller.disconnect()
     allow_system_sleep()
 

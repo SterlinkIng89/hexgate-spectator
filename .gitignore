@@ -72,7 +72,7 @@ env.python/
 Thumbs.db
 
 # Project test & config files
-test_*.py
+/test_*.py
 fetch_docs.py
 lcu_help.json
 config.json

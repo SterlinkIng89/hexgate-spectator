@@ -7,6 +7,9 @@ from gui.components.surface_card import SurfaceCard
 
 logger = logging.getLogger(__name__)
 
+PRIVACY_OPTIONS = ["Unlisted", "Public", "Private"]
+DEFAULT_PRIVACY_DISPLAY = "Unlisted"
+
 class YouTubePanel(SurfaceCard):
     """
     Control card for YouTube Live Stream integration:
@@ -59,7 +62,7 @@ class YouTubePanel(SurfaceCard):
         )
         self.btn_auth.pack(side="right", padx=(8, 4))
 
-        # Middle row: Stream Title Entry
+        # Middle row: Stream Title Entry & Privacy
         self.title_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.title_frame.pack(fill="x", padx=12, pady=(4, 6))
 
@@ -71,8 +74,22 @@ class YouTubePanel(SurfaceCard):
             placeholder_text="e.g. EST vs INTZ - {date}",
             font=label_font
         )
-        self.entry_stream_title.pack(side="left", fill="x", expand=True)
+        self.entry_stream_title.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_stream_title.insert(0, "EST vs INTZ - {date}")
+
+        self.lbl_privacy = ctk.CTkLabel(self.title_frame, text="Privacy:", font=label_font, anchor="w")
+        self.lbl_privacy.pack(side="left", padx=(0, 6))
+
+        self.option_privacy = ctk.CTkOptionMenu(
+            self.title_frame,
+            values=PRIVACY_OPTIONS,
+            font=label_font,
+            dropdown_font=label_font,
+            width=100,
+            command=self._on_privacy_changed
+        )
+        self.option_privacy.set(DEFAULT_PRIVACY_DISPLAY)
+        self.option_privacy.pack(side="left")
 
         # Discord Webhook row
         self.discord_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -169,10 +186,14 @@ class YouTubePanel(SurfaceCard):
 
             youtube_manager.authenticate(force_interactive=True, on_completed=on_done)
 
+    def _on_privacy_changed(self, _choice=None):
+        self._notify_change()
+
     def _on_toggle_enabled(self):
         is_on = self.check_yt_enabled.get() == 1
         state = "normal" if is_on else "disabled"
         self.entry_stream_title.configure(state=state)
+        self.option_privacy.configure(state=state)
         
         if not is_on:
             self.check_discord_enabled.configure(state="disabled")
@@ -221,6 +242,7 @@ class YouTubePanel(SurfaceCard):
         if enabled:
             is_on = self.check_yt_enabled.get() == 1
             self.entry_stream_title.configure(state="normal" if is_on else "disabled")
+            self.option_privacy.configure(state="normal" if is_on else "disabled")
             self.check_yt_enabled.configure(state="normal")
             self.btn_auth.configure(state="normal")
             self.check_discord_enabled.configure(state="normal" if is_on else "disabled")
@@ -228,6 +250,7 @@ class YouTubePanel(SurfaceCard):
             self.entry_discord_webhook.configure(state="normal" if (is_on and discord_on) else "disabled")
         else:
             self.entry_stream_title.configure(state="disabled")
+            self.option_privacy.configure(state="disabled")
             self.check_discord_enabled.configure(state="disabled")
             self.entry_discord_webhook.configure(state="disabled")
             self.check_yt_enabled.configure(state="disabled")
@@ -239,6 +262,11 @@ class YouTubePanel(SurfaceCard):
         if title == "[EST vs INTZ - {date}]":
             title = "EST vs INTZ - {date}"
         set_entry_text(self.entry_stream_title, title)
+
+        privacy_val = str(config.get("yt_privacy", DEFAULT_PRIVACY_DISPLAY)).strip().capitalize()
+        if privacy_val not in PRIVACY_OPTIONS:
+            privacy_val = DEFAULT_PRIVACY_DISPLAY
+        self.option_privacy.set(privacy_val)
 
         discord_webhook = config.get("discord_webhook_url", "")
         set_entry_text(self.entry_discord_webhook, discord_webhook)
@@ -263,6 +291,7 @@ class YouTubePanel(SurfaceCard):
         return {
             "yt_enabled": self.check_yt_enabled.get() == 1,
             "yt_stream_title": self.entry_stream_title.get().strip() or "EST vs INTZ - {date}",
+            "yt_privacy": self.option_privacy.get().lower(),
             "discord_enabled": self.check_discord_enabled.get() == 1,
             "discord_webhook_url": self.entry_discord_webhook.get().strip()
         }

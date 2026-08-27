@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 SCOPES = ['https://www.googleapis.com/auth/youtube']
 APPDATA_DIR = os.path.join(os.getenv('APPDATA', os.path.expanduser('~')), 'HexgateSpectator')
 
+VALID_PRIVACY_STATUSES = frozenset({"public", "unlisted", "private"})
+DEFAULT_PRIVACY = "unlisted"
+
 class YouTubeManager:
     """
     Manages YouTube Data API v3 authentication, live stream creation,
@@ -221,7 +224,7 @@ class YouTubeManager:
         ).execute()
         return insert_response["id"]
 
-    def create_broadcast(self, title_template: str, privacy: str = "public") -> tuple[str, str]:
+    def create_broadcast(self, title_template: str, privacy: str = "unlisted") -> tuple[str, str]:
         """
         Creates a new YouTube Live Broadcast, binds it to an ingestion stream without monitor preview,
         and returns (broadcast_id, watch_url).
@@ -234,7 +237,12 @@ class YouTubeManager:
             formatted_title = self.format_title(title_template)
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            logger.info(f"[YouTube] Creating broadcast: '{formatted_title}' ({privacy})...")
+            privacy_clean = privacy.lower().strip() if privacy else DEFAULT_PRIVACY
+            if privacy_clean not in VALID_PRIVACY_STATUSES:
+                logger.warning(f"[YouTube] Invalid privacy status '{privacy}', falling back to '{DEFAULT_PRIVACY}'.")
+                privacy_clean = DEFAULT_PRIVACY
+
+            logger.info(f"[YouTube] Creating broadcast: '{formatted_title}' ({privacy_clean})...")
 
             broadcast_body = {
                 "snippet": {
@@ -243,7 +251,7 @@ class YouTubeManager:
                     "description": "Stream automatically managed by Hexgate Spectator."
                 },
                 "status": {
-                    "privacyStatus": privacy,
+                    "privacyStatus": privacy_clean,
                     "selfDeclaredMadeForKids": False
                 },
                 "contentDetails": {
@@ -284,11 +292,11 @@ class YouTubeManager:
             logger.info(f"[YouTube] Broadcast created successfully! Link: {watch_url}")
             return broadcast_id, watch_url
 
-    def create_broadcast_async(self, title_template: str, on_success=None, on_error=None):
+    def create_broadcast_async(self, title_template: str, privacy: str = "unlisted", on_success=None, on_error=None):
         """Non-blocking call to create a broadcast and invoke a callback."""
         def _worker():
             try:
-                _, watch_url = self.create_broadcast(title_template=title_template)
+                _, watch_url = self.create_broadcast(title_template=title_template, privacy=privacy)
                 if on_success:
                     on_success(watch_url)
             except Exception as e:

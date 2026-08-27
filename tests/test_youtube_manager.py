@@ -30,12 +30,11 @@ def test_is_configured_and_authenticated(tmp_path):
     assert mgr.is_configured()
 
 
-def test_create_broadcast(tmp_path):
+def test_create_broadcast_default_unlisted(tmp_path):
     mgr = YouTubeManager()
     mgr.client_secret_file = str(tmp_path / "client_secret.json")
     mgr.token_file = str(tmp_path / "yt_token.json")
 
-    # Mock valid credentials and YouTube client
     mock_creds = MagicMock()
     mock_creds.valid = True
     mgr.credentials = mock_creds
@@ -43,27 +42,79 @@ def test_create_broadcast(tmp_path):
     mock_yt = MagicMock()
     mgr.youtube = mock_yt
 
-    # Mock liveBroadcasts().insert().execute()
     mock_insert = MagicMock()
     mock_insert.execute.return_value = {"id": "mock_broadcast_123"}
     mock_yt.liveBroadcasts().insert.return_value = mock_insert
 
-    # Mock liveStreams().list().execute()
     mock_streams_list = MagicMock()
     mock_streams_list.execute.return_value = {"items": [{"id": "mock_stream_abc"}]}
     mock_yt.liveStreams().list.return_value = mock_streams_list
 
-    # Mock liveBroadcasts().bind().execute()
     mock_bind = MagicMock()
     mock_bind.execute.return_value = {}
     mock_yt.liveBroadcasts().bind.return_value = mock_bind
 
-    bid, watch_url = mgr.create_broadcast("EST vs INTZ - {date}", privacy="public")
+    bid, watch_url = mgr.create_broadcast("EST vs INTZ - {date}")
 
     assert bid == "mock_broadcast_123"
     assert watch_url == "https://www.youtube.com/watch?v=mock_broadcast_123"
     assert mgr.active_broadcast_id == "mock_broadcast_123"
     assert mgr.active_stream_url == watch_url
+
+    # Check insert body status
+    call_args = mock_yt.liveBroadcasts().insert.call_args
+    assert call_args.kwargs["body"]["status"]["privacyStatus"] == "unlisted"
+
+
+def test_create_broadcast_configurable_privacy(tmp_path):
+    mgr = YouTubeManager()
+    mgr.client_secret_file = str(tmp_path / "client_secret.json")
+    mgr.token_file = str(tmp_path / "yt_token.json")
+
+    mock_creds = MagicMock()
+    mock_creds.valid = True
+    mgr.credentials = mock_creds
+
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+
+    mock_insert = MagicMock()
+    mock_insert.execute.return_value = {"id": "mock_broadcast_123"}
+    mock_yt.liveBroadcasts().insert.return_value = mock_insert
+
+    mock_streams_list = MagicMock()
+    mock_streams_list.execute.return_value = {"items": [{"id": "mock_stream_abc"}]}
+    mock_yt.liveStreams().list.return_value = mock_streams_list
+
+    mock_bind = MagicMock()
+    mock_bind.execute.return_value = {}
+    mock_yt.liveBroadcasts().bind.return_value = mock_bind
+
+    # Public
+    mgr.create_broadcast("EST vs INTZ - {date}", privacy="public")
+    call_args = mock_yt.liveBroadcasts().insert.call_args
+    assert call_args.kwargs["body"]["status"]["privacyStatus"] == "public"
+
+    # Private
+    mgr.create_broadcast("EST vs INTZ - {date}", privacy="private")
+    call_args = mock_yt.liveBroadcasts().insert.call_args
+    assert call_args.kwargs["body"]["status"]["privacyStatus"] == "private"
+
+    # Invalid fallback
+    mgr.create_broadcast("EST vs INTZ - {date}", privacy="unknown_status")
+    call_args = mock_yt.liveBroadcasts().insert.call_args
+    assert call_args.kwargs["body"]["status"]["privacyStatus"] == "unlisted"
+
+
+def test_create_broadcast_async_with_privacy(tmp_path):
+    mgr = YouTubeManager()
+    with patch.object(mgr, "create_broadcast", return_value=("bid1", "https://youtube.com/watch?v=bid1")) as mock_cb:
+        callback = MagicMock()
+        mgr.create_broadcast_async("Title", privacy="private", on_success=callback)
+        import time
+        time.sleep(0.1)
+        mock_cb.assert_called_with(title_template="Title", privacy="private")
+        callback.assert_called_with("https://youtube.com/watch?v=bid1")
 
 
 def test_transition_and_complete():

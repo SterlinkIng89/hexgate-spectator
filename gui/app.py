@@ -70,6 +70,7 @@ class App(ctk.CTk):
     _YT_DEFAULTS = {
         "yt_enabled": 1,
         "yt_stream_title": "EST vs INTZ - {date}",
+        "yt_privacy": "unlisted",
         "discord_enabled": 1,
         "discord_webhook_url": "",
     }
@@ -312,6 +313,7 @@ class App(ctk.CTk):
 
                 youtube_manager.create_broadcast_async(
                     title_template=title_tpl,
+                    privacy=yt_config.get("yt_privacy", "unlisted"),
                     on_success=on_broadcast_success
                 )
 

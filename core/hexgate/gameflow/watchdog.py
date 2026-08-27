@@ -18,6 +18,16 @@ _frozen_warnings_issued: set = set()
 _players_logged: bool = False
 
 
+def format_game_time(seconds: float) -> str:
+    """Formats game time in seconds into mm:ss (or hh:mm:ss) format."""
+    total_seconds = int(max(0, seconds))
+    minutes, secs = divmod(total_seconds, 60)
+    if minutes >= 60:
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def reset():
     """Reset all freeze tracking. Called when a new InProgress game begins."""
     global _game_time_last_value, _game_time_last_changed_at
@@ -66,7 +76,7 @@ async def check_game_freeze(connection, cleanup_fn):
         _game_time_last_changed_at = now
         _frozen_warnings_issued = set()
         if now - _last_game_time_log_at >= 30:
-            logger.info(f"[SPECTATE] Game running. Current gameTime: {game_time:.1f}s")
+            logger.info(f"[SPECTATE] Game running. Current gameTime: {format_game_time(game_time)}")
             _last_game_time_log_at = now
         return
 
@@ -80,5 +90,5 @@ async def check_game_freeze(connection, cleanup_fn):
                     "Game is likely paused. Waiting for unpause or manual exit..."
                 )
             else:
-                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {game_time:.1f}s for {threshold}s...")
+                logger.warning(f"[WARN] [SPECTATE] Game time stalled at {format_game_time(game_time)} for {threshold}s...")
             _frozen_warnings_issued.add(threshold)

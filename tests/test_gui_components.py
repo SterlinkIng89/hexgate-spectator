@@ -287,4 +287,46 @@ def test_youtube_panel_placeholders_visibility_on_empty(tk_root):
     assert panel.entry_discord_webhook._entry.get() == "Optional: Webhook URL to auto-post stream link"
 
 
+def test_youtube_panel_privacy_configuration(tk_root):
+    panel = YouTubePanel(tk_root)
+
+    # Default privacy should be Unlisted
+    assert panel.option_privacy.get() == "Unlisted"
+    assert panel.get_config()["yt_privacy"] == "unlisted"
+
+    # Load public
+    panel.load_config({"yt_privacy": "public"})
+    assert panel.option_privacy.get() == "Public"
+    assert panel.get_config()["yt_privacy"] == "public"
+
+    # Load private
+    panel.load_config({"yt_privacy": "private"})
+    assert panel.option_privacy.get() == "Private"
+    assert panel.get_config()["yt_privacy"] == "private"
+
+    # Load invalid / empty fallback
+    panel.load_config({"yt_privacy": "invalid_setting"})
+    assert panel.option_privacy.get() == "Unlisted"
+    assert panel.get_config()["yt_privacy"] == "unlisted"
+
+
+def test_youtube_panel_privacy_enabled_state(tk_root):
+    panel = YouTubePanel(tk_root)
+    panel.load_config({"yt_enabled": 1})
+
+    # Disabled when bot is running
+    panel.set_enabled(False)
+    assert panel.option_privacy.cget("state") == "disabled"
+
+    # Enabled when bot is stopped and yt_enabled is True
+    panel.set_enabled(True)
+    assert panel.option_privacy.cget("state") == "normal"
+
+    # Disabled when yt_enabled switch is toggled off
+    panel.check_yt_enabled.deselect()
+    panel._on_toggle_enabled()
+    assert panel.option_privacy.cget("state") == "disabled"
+
+
+
 

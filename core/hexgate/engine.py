@@ -110,6 +110,10 @@ def start_bot(callback, config_data: dict):
     BOT_CONFIG.update(config_data)
 
     obs_controller.configure(config_data)
+    youtube_manager.configure_discord(
+        webhook_url=config_data.get("discord_webhook_url", ""),
+        enabled=config_data.get("discord_enabled", False)
+    )
     if obs_controller.enabled:
         threading.Thread(target=obs_controller.connect, daemon=True).start()
         if obs_controller.schedule_enabled:

@@ -132,7 +132,7 @@ def cancel_shutdown() -> bool:
             err_msg = res.stderr.strip().lower()
             # If code 1116 (No shutdown was in progress), treat as clean success
             if "1116" in err_msg or "no shutdown" in err_msg or "unable to abort" in err_msg:
-                logger.debug(f"[Power] No shutdown was in progress to cancel.")
+                logger.debug("[Power] No shutdown was in progress to cancel.")
                 return True
             logger.warning(f"[Power] Abort shutdown returned code {res.returncode}: {res.stderr.strip()}")
             return False

@@ -365,8 +365,3 @@ def test_obs_settings_form_shutdown_disabled_when_form_disabled(tk_root):
     form.set_enabled(True)
     assert form.check_obs_shutdown.cget("state") == "normal"
     assert form.combo_shutdown_delay.cget("state") == "normal"
-
-
-
-
-

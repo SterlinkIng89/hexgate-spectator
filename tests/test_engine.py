@@ -8,7 +8,7 @@ from core.hexgate.state import bot_state
 
 def test_hexgate_version():
     assert core.hexgate.__version__ == __version__
-    assert core.hexgate.__version__ == "2.0.0"
+    assert core.hexgate.__version__ == "2.1.0"
 
 
 def test_stop_bot_invokes_obs_on_bot_stop():

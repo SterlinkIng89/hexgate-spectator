@@ -14,7 +14,6 @@ from core.version import __version__ as APP_VERSION
 from core.hexgate import start_bot, stop_bot
 from core.obs_controller import obs_controller, silence_external_loggers
 from core.youtube_manager import youtube_manager
-from core.discord_notifier import send_discord_notification_async
 from gui.components import (
     ConsoleToolbar,
     StatusFooter,
@@ -301,12 +300,6 @@ class App(ctk.CTk):
                 
                 def on_broadcast_success(watch_url):
                     self.after(0, lambda: self.youtube_panel.update_stream_url(watch_url))
-                    
-                    discord_enabled = yt_config.get("discord_enabled", False)
-                    discord_webhook_url = yt_config.get("discord_webhook_url", "").strip()
-                    if discord_enabled and discord_webhook_url:
-                        formatted_title = youtube_manager.format_title(title_tpl)
-                        send_discord_notification_async(discord_webhook_url, formatted_title, watch_url)
 
                     if obs_controller.cached_status.get("active", False):
                         youtube_manager.transition_to_live_async()

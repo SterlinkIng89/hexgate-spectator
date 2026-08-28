@@ -214,3 +214,128 @@ def test_logout_clears_channel_cache(tmp_path):
     assert not os.path.exists(mgr.channel_cache_file)
     assert not os.path.exists(mgr.token_file)
 
+
+def test_configure_discord():
+    mgr = YouTubeManager()
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=True)
+    assert mgr.discord_webhook_url == "https://discord.com/api/webhooks/test"
+    assert mgr.discord_enabled is True
+
+    mgr.configure_discord("  ", enabled=False)
+    assert mgr.discord_webhook_url == ""
+    assert mgr.discord_enabled is False
+
+
+def test_create_broadcast_does_not_send_discord_notification(tmp_path):
+    mgr = YouTubeManager()
+    mgr.client_secret_file = str(tmp_path / "client_secret.json")
+    mgr.token_file = str(tmp_path / "yt_token.json")
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=True)
+
+    mock_creds = MagicMock()
+    mock_creds.valid = True
+    mgr.credentials = mock_creds
+
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+
+    mock_insert = MagicMock()
+    mock_insert.execute.return_value = {"id": "mock_bid_123"}
+    mock_yt.liveBroadcasts().insert.return_value = mock_insert
+
+    mock_streams_list = MagicMock()
+    mock_streams_list.execute.return_value = {"items": [{"id": "mock_stream_abc"}]}
+    mock_yt.liveStreams().list.return_value = mock_streams_list
+
+    mock_bind = MagicMock()
+    mock_bind.execute.return_value = {}
+    mock_yt.liveBroadcasts().bind.return_value = mock_bind
+
+    with patch("core.youtube_manager.send_discord_notification_async") as mock_notify:
+        bid, watch_url = mgr.create_broadcast("EST vs INTZ - {date}")
+        assert bid == "mock_bid_123"
+        mock_notify.assert_not_called()
+
+
+def test_transition_to_live_triggers_discord_notification():
+    mgr = YouTubeManager()
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+    mgr.active_broadcast_id = "live_bid_789"
+    mgr.active_stream_url = "https://www.youtube.com/watch?v=live_bid_789"
+    mgr.active_stream_title = "EST vs INTZ - 27/08/2026"
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=True)
+
+    mock_transition = MagicMock()
+    mock_transition.execute.return_value = {"status": {"lifeCycleStatus": "live"}}
+    mock_yt.liveBroadcasts().transition.return_value = mock_transition
+
+    with patch("core.youtube_manager.send_discord_notification_async") as mock_notify:
+        res = mgr.transition_to_live()
+        assert res is True
+        mock_notify.assert_called_once_with(
+            "https://discord.com/api/webhooks/test",
+            "EST vs INTZ - 27/08/2026",
+            "https://www.youtube.com/watch?v=live_bid_789"
+        )
+
+        # Calling transition_to_live again for the same broadcast should not re-send
+        res_again = mgr.transition_to_live()
+        assert res_again is True
+        assert mock_notify.call_count == 1
+
+
+def test_transition_to_live_already_live_status():
+    mgr = YouTubeManager()
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+    mgr.active_broadcast_id = "already_live_bid"
+    mgr.active_stream_url = "https://www.youtube.com/watch?v=already_live_bid"
+    mgr.active_stream_title = "EST vs INTZ - Live Match"
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=True)
+
+    mock_list = MagicMock()
+    mock_list.execute.return_value = {
+        "items": [{"status": {"lifeCycleStatus": "live"}}]
+    }
+    mock_yt.liveBroadcasts().list.return_value = mock_list
+
+    with patch("core.youtube_manager.send_discord_notification_async") as mock_notify:
+        res = mgr.transition_to_live()
+        assert res is True
+        mock_notify.assert_called_once_with(
+            "https://discord.com/api/webhooks/test",
+            "EST vs INTZ - Live Match",
+            "https://www.youtube.com/watch?v=already_live_bid"
+        )
+
+
+def test_transition_to_live_discord_disabled():
+    mgr = YouTubeManager()
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+    mgr.active_broadcast_id = "bid_no_discord"
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=False)
+
+    mock_transition = MagicMock()
+    mock_transition.execute.return_value = {"status": {"lifeCycleStatus": "live"}}
+    mock_yt.liveBroadcasts().transition.return_value = mock_transition
+
+    with patch("core.youtube_manager.send_discord_notification_async") as mock_notify:
+        res = mgr.transition_to_live()
+        assert res is True
+        mock_notify.assert_not_called()
+
+
+def test_logout_resets_discord_state():
+    mgr = YouTubeManager()
+    mgr.configure_discord("https://discord.com/api/webhooks/test", enabled=True)
+    mgr._notified_broadcast_ids.add("bid123")
+
+    mgr.logout()
+
+    assert mgr.discord_webhook_url is None
+    assert mgr.discord_enabled is False
+    assert len(mgr._notified_broadcast_ids) == 0
+
+

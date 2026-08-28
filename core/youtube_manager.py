@@ -9,6 +9,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
+from core.discord_notifier import send_discord_notification_async
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/youtube']
@@ -20,7 +22,7 @@ DEFAULT_PRIVACY = "unlisted"
 class YouTubeManager:
     """
     Manages YouTube Data API v3 authentication, live stream creation,
-    broadcast lifecycle (live/complete), and stream URL retrieval.
+    broadcast lifecycle (live/complete), stream URL retrieval, and Discord live notifications.
     """
     def __init__(self):
         self.client_secret_file = os.path.join(APPDATA_DIR, 'client_secret.json')
@@ -32,6 +34,9 @@ class YouTubeManager:
         self.active_broadcast_id = None
         self.active_stream_url = None
         self.active_stream_title = None
+        self.discord_webhook_url = None
+        self.discord_enabled = False
+        self._notified_broadcast_ids = set()
         self._lock = threading.RLock()
         self._auth_in_progress = False
 
@@ -172,6 +177,9 @@ class YouTubeManager:
             self.active_broadcast_id = None
             self.active_stream_url = None
             self.active_stream_title = None
+            self.discord_webhook_url = None
+            self.discord_enabled = False
+            self._notified_broadcast_ids.clear()
             for filepath in [self.token_file, self.channel_cache_file]:
                 if os.path.exists(filepath):
                     try:
@@ -305,6 +313,27 @@ class YouTubeManager:
                     on_error(e)
         threading.Thread(target=_worker, daemon=True, name="YouTubeCreateWorker").start()
 
+    def configure_discord(self, webhook_url: str, enabled: bool = True):
+        """Configures Discord webhook notification settings for live broadcast transitions."""
+        with self._lock:
+            self.discord_webhook_url = (webhook_url or "").strip()
+            self.discord_enabled = bool(enabled)
+
+    def _send_discord_notification_if_needed(self, broadcast_id: str):
+        """Dispatches Discord webhook notification once when the broadcast goes live."""
+        with self._lock:
+            if not self.discord_enabled or not self.discord_webhook_url:
+                return
+            if not broadcast_id or broadcast_id in self._notified_broadcast_ids:
+                return
+
+            watch_url = self.active_stream_url or f"https://www.youtube.com/watch?v={broadcast_id}"
+            stream_title = self.active_stream_title or "Live Stream"
+            self._notified_broadcast_ids.add(broadcast_id)
+
+        logger.info(f"[YouTube] Triggering Discord webhook notification for live stream: {stream_title}")
+        send_discord_notification_async(self.discord_webhook_url, stream_title, watch_url)
+
     def transition_to_live(self, broadcast_id: str = None, max_retries: int = 15, retry_interval: float = 2.0) -> bool:
         """
         Transitions broadcast to 'live'.
@@ -328,6 +357,7 @@ class YouTubeManager:
                 status = items[0]["status"].get("lifeCycleStatus", "")
                 if status in ["live", "liveStarting"]:
                     logger.info(f"[YouTube] Broadcast {bid} is already {status.upper()}.")
+                    self._send_discord_notification_if_needed(bid)
                     return True
                 elif status == "complete":
                     logger.warning(f"[YouTube] Broadcast {bid} is already COMPLETE.")
@@ -341,6 +371,7 @@ class YouTubeManager:
                 ).execute()
                 new_status = res.get("status", {}).get("lifeCycleStatus", "live")
                 logger.info(f"[YouTube] Broadcast {bid} is now {new_status.upper()}!")
+                self._send_discord_notification_if_needed(bid)
                 return True
 
             except Exception as e:

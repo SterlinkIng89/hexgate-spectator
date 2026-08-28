@@ -3,6 +3,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from core.youtube_manager import youtube_manager
+from core.power import shutdown_system
 
 # Silence third-party traceback dumps when OBS is offline
 def silence_external_loggers():
@@ -54,6 +55,8 @@ class OBSController:
         self.schedule_enabled = True
         self.schedule_start_time = "10:00"
         self.schedule_stop_time = "16:00"
+        self.shutdown_enabled = False
+        self.shutdown_delay = 60
         self._pending_stop_after_game = False
         self._scheduler_thread = None
         self._stop_scheduler_event = threading.Event()
@@ -82,6 +85,14 @@ class OBSController:
             self.schedule_enabled = bool(config_dict.get("obs_schedule_enabled", True))
             self.schedule_start_time = config_dict.get("obs_schedule_start_time", "10:00").strip() or "10:00"
             self.schedule_stop_time = config_dict.get("obs_schedule_stop_time", "16:00").strip() or "16:00"
+            self.shutdown_enabled = bool(
+                config_dict.get("obs_shutdown_enabled", False) or config_dict.get("shutdown_enabled", False)
+            )
+            try:
+                delay_val = config_dict.get("obs_shutdown_delay", config_dict.get("shutdown_delay", 60))
+                self.shutdown_delay = max(0, int(delay_val)) if delay_val is not None else 60
+            except (ValueError, TypeError):
+                self.shutdown_delay = 60
 
     @property
     def is_connected(self) -> bool:
@@ -323,7 +334,17 @@ class OBSController:
                     self.disconnect()
                 return False
 
-    def stop_stream(self) -> bool:
+    def _handle_shutdown_on_stream_end(self):
+        """Triggers YouTube broadcast completion and system shutdown if enabled."""
+        youtube_manager.complete_broadcast_async()
+        if self.shutdown_enabled:
+            logger.warning(
+                f"[OBS] Stream ended and PC auto-shutdown is enabled. "
+                f"Shutting down in {self.shutdown_delay} seconds..."
+            )
+            shutdown_system(delay_seconds=self.shutdown_delay, reason="Hexgate Spectator stream ended")
+
+    def stop_stream(self, trigger_shutdown: bool = True) -> bool:
         """Stops streaming in OBS directly without redundant pre-flight query."""
         if not self.enabled:
             return False
@@ -338,6 +359,8 @@ class OBSController:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(f"[OBS] Stream stopped successfully in {elapsed_ms:.1f}ms.")
                 self._mark_stream_stopped()
+                if trigger_shutdown:
+                    self._handle_shutdown_on_stream_end()
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -345,6 +368,8 @@ class OBSController:
                 if "not active" in err_str or "output_not_running" in err_str or "code 501" in err_str:
                     logger.info(f"[OBS] Stream is already stopped ({elapsed_ms:.1f}ms).")
                     self._mark_stream_stopped()
+                    if trigger_shutdown:
+                        self._handle_shutdown_on_stream_end()
                     return True
                 logger.error(f"[OBS] Failed to stop stream ({elapsed_ms:.1f}ms): {e}")
                 if _is_obs_unreachable_error(e):
@@ -639,7 +664,7 @@ class OBSController:
             if self.schedule_enabled and self.is_current_time_in_range():
                 logger.info("[OBS] Bot stopped, but leaving stream active due to schedule window.")
             else:
-                self.stop_stream()
+                self.stop_stream(trigger_shutdown=False)
             self.disconnect()
 
 

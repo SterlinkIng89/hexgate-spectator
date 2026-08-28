@@ -328,5 +328,45 @@ def test_youtube_panel_privacy_enabled_state(tk_root):
     assert panel.option_privacy.cget("state") == "disabled"
 
 
+def test_obs_settings_form_shutdown_config_and_widgets(tk_root):
+    form = ObsSettingsForm(tk_root)
+    form.load_config({
+        "obs_enabled": 1,
+        "obs_shutdown_enabled": 1,
+        "obs_shutdown_delay": 120,
+    })
+
+    assert form.check_obs_shutdown.get() == 1
+    assert form.combo_shutdown_delay.get() == "120s"
+    assert form.combo_shutdown_delay.cget("state") == "normal"
+
+    cfg = form.get_config()
+    assert cfg["obs_shutdown_enabled"] is True
+    assert cfg["obs_shutdown_delay"] == 120
+
+    # Turn off shutdown
+    form.check_obs_shutdown.deselect()
+    form._on_toggle_obs_shutdown()
+    assert form.combo_shutdown_delay.cget("state") == "disabled"
+    assert form.get_config()["obs_shutdown_enabled"] is False
+
+
+def test_obs_settings_form_shutdown_disabled_when_form_disabled(tk_root):
+    form = ObsSettingsForm(tk_root)
+    form.load_config({
+        "obs_enabled": 1,
+        "obs_shutdown_enabled": 1,
+    })
+
+    form.set_enabled(False)
+    assert form.check_obs_shutdown.cget("state") == "disabled"
+    assert form.combo_shutdown_delay.cget("state") == "disabled"
+
+    form.set_enabled(True)
+    assert form.check_obs_shutdown.cget("state") == "normal"
+    assert form.combo_shutdown_delay.cget("state") == "normal"
+
+
+
 
 

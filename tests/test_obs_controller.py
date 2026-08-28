@@ -99,3 +99,65 @@ def test_obs_controller_apply_scene_and_start_does_not_set_scene():
                     mock_prof.assert_called_once_with("TestProfile")
                     mock_col.assert_called_once_with("TestCollection")
                     mock_start.assert_called_once()
+
+
+def test_obs_controller_configure_shutdown():
+    controller = OBSController()
+    assert controller.shutdown_enabled is False
+    assert controller.shutdown_delay == 60
+
+    controller.configure({
+        "obs_shutdown_enabled": True,
+        "obs_shutdown_delay": 120,
+    })
+    assert controller.shutdown_enabled is True
+    assert controller.shutdown_delay == 120
+
+
+def test_obs_controller_stop_stream_triggers_shutdown():
+    controller = OBSController()
+    controller.enabled = True
+    controller.shutdown_enabled = True
+    controller.shutdown_delay = 45
+
+    mock_client = MagicMock()
+    mock_client.stop_stream.return_value = None
+
+    with patch.object(controller, "_ensure_connected", return_value=True), \
+         patch("core.youtube_manager.youtube_manager.complete_broadcast_async") as mock_yt, \
+         patch("core.obs_controller.shutdown_system") as mock_shutdown:
+        controller._client = mock_client
+        res = controller.stop_stream(trigger_shutdown=True)
+        assert res is True
+        mock_client.stop_stream.assert_called_once()
+        mock_yt.assert_called_once()
+        mock_shutdown.assert_called_once_with(delay_seconds=45, reason="Hexgate Spectator stream ended")
+
+
+def test_obs_controller_stop_stream_disabled_shutdown():
+    controller = OBSController()
+    controller.enabled = True
+    controller.shutdown_enabled = False
+
+    mock_client = MagicMock()
+    mock_client.stop_stream.return_value = None
+
+    with patch.object(controller, "_ensure_connected", return_value=True), \
+         patch("core.youtube_manager.youtube_manager.complete_broadcast_async") as mock_yt, \
+         patch("core.obs_controller.shutdown_system") as mock_shutdown:
+        controller._client = mock_client
+        res = controller.stop_stream(trigger_shutdown=True)
+        assert res is True
+        mock_yt.assert_called_once()
+        mock_shutdown.assert_not_called()
+
+
+def test_obs_controller_on_bot_stop_does_not_trigger_shutdown():
+    controller = OBSController()
+    controller.enabled = True
+    controller.shutdown_enabled = True
+    controller.schedule_enabled = False
+
+    with patch.object(controller, "stop_stream") as mock_stop:
+        controller.on_bot_stop()
+        mock_stop.assert_called_once_with(trigger_shutdown=False)

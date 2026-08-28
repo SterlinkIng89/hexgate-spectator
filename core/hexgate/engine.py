@@ -16,7 +16,7 @@ from datetime import datetime
 
 from core.obs_controller import obs_controller
 from core.youtube_manager import youtube_manager
-from core.power import prevent_system_sleep, allow_system_sleep
+from core.power import prevent_system_sleep, allow_system_sleep, cancel_shutdown
 from core.hexgate.config import BOT_CONFIG
 from core.hexgate.state import bot_state
 from core.hexgate.client.lcu_connector import connector, init_connector_events
@@ -138,6 +138,7 @@ def stop_bot():
     bot_state.bot_active = False
     bot_state.is_searching = False
 
+    cancel_shutdown()
     obs_controller.on_bot_stop()
     allow_system_sleep()
 

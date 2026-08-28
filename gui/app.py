@@ -65,6 +65,8 @@ class App(ctk.CTk):
         "obs_schedule_enabled": 1,
         "obs_schedule_start_time": "10:00",
         "obs_schedule_stop_time": "16:00",
+        "obs_shutdown_enabled": 0,
+        "obs_shutdown_delay": 60,
     }
     _YT_DEFAULTS = {
         "yt_enabled": 1,

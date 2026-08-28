@@ -2,6 +2,7 @@ import logging
 import threading
 import customtkinter as ctk
 from core.obs_controller import obs_controller
+from core.power import cancel_shutdown
 from gui.components.collapsible_frame import CollapsibleFrame
 from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_section_font
@@ -126,6 +127,29 @@ class ObsSettingsForm(CollapsibleFrame):
         )
         self.combo_stop_ampm.pack(side="left")
 
+        # --- Shutdown PC after stream ends toggle & grace delay ---
+        self.check_obs_shutdown = ctk.CTkSwitch(
+            self.content_frame,
+            text="Shutdown PC after stream ends",
+            font=label_font,
+            command=self._on_toggle_obs_shutdown,
+        )
+        self.check_obs_shutdown.grid(row=6, column=0, columnspan=2, padx=10, pady=(2, 6), sticky="w")
+
+        shutdown_delay_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        shutdown_delay_frame.grid(row=6, column=2, columnspan=2, padx=10, pady=(2, 6), sticky="w")
+
+        ctk.CTkLabel(shutdown_delay_frame, text="Grace Delay:", font=label_font).pack(side="left", padx=(0, 6))
+        self.combo_shutdown_delay = ctk.CTkComboBox(
+            shutdown_delay_frame,
+            values=["30s", "60s", "120s", "300s"],
+            width=80,
+            font=label_font,
+            dropdown_font=label_font,
+            command=lambda _: self._notify_change(),
+        )
+        self.combo_shutdown_delay.pack(side="left")
+
         self._obs_connection_widgets = [
             self.entry_obs_host,
             self.entry_obs_port,
@@ -136,6 +160,7 @@ class ObsSettingsForm(CollapsibleFrame):
             self.check_obs_auto_start,
             self.check_obs_auto_stop,
             self.check_obs_schedule,
+            self.check_obs_shutdown,
         ]
         self._schedule_picker_widgets = [
             self.combo_start_hour,
@@ -249,6 +274,7 @@ class ObsSettingsForm(CollapsibleFrame):
         for w in self._obs_connection_widgets:
             w.configure(state=state)
         self._on_toggle_obs_schedule()
+        self._on_toggle_obs_shutdown()
 
     def _on_toggle_obs_schedule(self):
         """Enables/disables schedule picker widgets and syncs config to controller."""
@@ -258,6 +284,15 @@ class ObsSettingsForm(CollapsibleFrame):
             w.configure(state=sched_state)
         self._notify_change()
 
+    def _on_toggle_obs_shutdown(self):
+        """Enables/disables shutdown delay combobox and cancels any pending shutdown if turned off."""
+        is_shutdown = (self.check_obs_enabled.get() == 1 and self.check_obs_shutdown.get() == 1)
+        sched_state = "normal" if is_shutdown else "disabled"
+        self.combo_shutdown_delay.configure(state=sched_state)
+        if self.check_obs_shutdown.get() == 0:
+            cancel_shutdown()
+        self._notify_change()
+
     def _notify_change(self):
         if self._on_config_changed:
             self._on_config_changed(self.get_config())
@@ -265,6 +300,7 @@ class ObsSettingsForm(CollapsibleFrame):
     def set_enabled(self, enabled: bool) -> None:
         if not enabled:
             self.check_obs_enabled.configure(state="disabled")
+            self.combo_shutdown_delay.configure(state="disabled")
             for w in self._obs_connection_widgets + self._schedule_picker_widgets:
                 w.configure(state="disabled")
         else:
@@ -336,6 +372,7 @@ class ObsSettingsForm(CollapsibleFrame):
             ("obs_auto_start", self.check_obs_auto_start),
             ("obs_auto_stop", self.check_obs_auto_stop),
             ("obs_schedule_enabled", self.check_obs_schedule),
+            ("obs_shutdown_enabled", self.check_obs_shutdown),
         ]
 
         for key, widget in checkboxes:
@@ -354,10 +391,24 @@ class ObsSettingsForm(CollapsibleFrame):
         self._set_combo_value(self.combo_stop_min, em)
         self._set_combo_value(self.combo_stop_ampm, eampm)
 
+        delay_val = config.get("obs_shutdown_delay", 60)
+        delay_str = f"{int(delay_val)}s" if str(delay_val).isdigit() else str(delay_val)
+        if not delay_str.endswith("s"):
+            delay_str += "s"
+        if delay_str not in ["30s", "60s", "120s", "300s"]:
+            delay_str = "60s"
+        self._set_combo_value(self.combo_shutdown_delay, delay_str)
+
         self._on_toggle_obs_enabled()
 
     def get_config(self) -> dict:
         """Returns the current OBS configuration as a dictionary."""
+        delay_raw = self.combo_shutdown_delay.get().replace("s", "").strip()
+        try:
+            delay_sec = int(delay_raw)
+        except ValueError:
+            delay_sec = 60
+
         return {
             "obs_enabled": self.check_obs_enabled.get() == 1,
             "obs_host": self.entry_obs_host.get().strip(),
@@ -374,4 +425,6 @@ class ObsSettingsForm(CollapsibleFrame):
             "obs_schedule_stop_time": self._to_24h(
                 self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get()
             ),
+            "obs_shutdown_enabled": self.check_obs_shutdown.get() == 1,
+            "obs_shutdown_delay": delay_sec,
         }

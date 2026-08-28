@@ -381,7 +381,8 @@ class YouTubeManager:
                 else:
                     logger.warning(f"[YouTube] Transition attempt {attempt} error: {e}")
                 time.sleep(retry_interval)
-
+                
+        logger.error(f"[YouTube] Failed to transition broadcast {bid} to LIVE after {max_retries} attempts! The RTMP stream may not be reaching YouTube.")
         return False
 
     def transition_to_live_async(self, broadcast_id: str = None):

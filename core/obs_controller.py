@@ -227,10 +227,22 @@ class OBSController:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.debug(f"[OBS] get_stream_status completed in {elapsed_ms:.1f}ms")
                 is_active = getattr(status, "output_active", False)
+                is_reconnecting = getattr(status, "output_reconnecting", False)
+                timecode = getattr(status, "output_timecode", "")
+                
+                if is_active:
+                    was_reconnecting = self.cached_status.get("reconnecting", False)
+                    if is_reconnecting and not was_reconnecting:
+                        logger.warning(f"[OBS] Stream is active but entered RECONNECTING state! Timecode: {timecode}")
+                    elif not is_reconnecting and was_reconnecting:
+                        logger.info(f"[OBS] Stream reconnected successfully. Timecode: {timecode}")
+                    elif self.cached_status.get("timecode") != timecode and timecode:
+                        logger.debug(f"[OBS] Stream active. Timecode: {timecode}")
+
                 res = {
                     "active": is_active,
-                    "timecode": getattr(status, "output_timecode", ""),
-                    "reconnecting": getattr(status, "output_reconnecting", False),
+                    "timecode": timecode,
+                    "reconnecting": is_reconnecting,
                     "connected": True
                 }
                 if is_active:

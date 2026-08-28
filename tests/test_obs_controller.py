@@ -161,3 +161,22 @@ def test_obs_controller_on_bot_stop_does_not_trigger_shutdown():
     with patch.object(controller, "stop_stream") as mock_stop:
         controller.on_bot_stop()
         mock_stop.assert_called_once_with(trigger_shutdown=False)
+
+
+def test_obs_controller_get_stream_status_reconnecting_transition():
+    controller = OBSController()
+    controller.enabled = True
+    
+    mock_client = MagicMock()
+    mock_status = MagicMock()
+    mock_status.output_active = True
+    mock_status.output_reconnecting = True
+    mock_status.output_timecode = "00:01:23"
+    mock_client.get_stream_status.return_value = mock_status
+
+    with patch.object(controller, "_ensure_connected", return_value=True):
+        controller._client = mock_client
+        res = controller.get_stream_status()
+        assert res["active"] is True
+        assert res["reconnecting"] is True
+        assert res["timecode"] == "00:01:23"

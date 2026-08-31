@@ -439,4 +439,110 @@ def test_on_stream_start_not_authenticated():
         mock_create.assert_not_called()
 
 
+def test_load_credentials_without_client_secret_file(tmp_path):
+    mgr = YouTubeManager()
+    mgr.client_secret_file = str(tmp_path / "client_secret.json")
+    mgr.token_file = str(tmp_path / "yt_token.json")
+    mgr.channel_cache_file = str(tmp_path / "yt_channel.json")
+
+    # Create token file but NO client_secret.json
+    (tmp_path / "yt_token.json").write_text('{"token": "xyz", "refresh_token": "abc"}', encoding="utf-8")
+    (tmp_path / "yt_channel.json").write_text('{"channel_name": "Persisted Channel"}', encoding="utf-8")
+
+    mock_creds = MagicMock()
+    mock_creds.expired = False
+    mock_creds.valid = True
+
+    with patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds), \
+         patch("core.youtube_manager.build") as mock_build:
+        mgr._load_credentials()
+
+    assert mgr.credentials is mock_creds
+    assert mgr.channel_name == "Persisted Channel"
+    assert mgr.is_authenticated() is True
+
+
+def test_authenticate_non_interactive_without_client_secret(tmp_path):
+    mgr = YouTubeManager()
+    mgr.client_secret_file = str(tmp_path / "client_secret.json")
+    mgr.token_file = str(tmp_path / "yt_token.json")
+    mgr.channel_cache_file = str(tmp_path / "yt_channel.json")
+
+    # Create token file but NO client_secret.json
+    (tmp_path / "yt_token.json").write_text('{"token": "xyz"}', encoding="utf-8")
+    (tmp_path / "yt_channel.json").write_text('{"channel_name": "Sterlink"}', encoding="utf-8")
+
+    mock_creds = MagicMock()
+    mock_creds.expired = False
+    mock_creds.valid = True
+
+    with patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds), \
+         patch("core.youtube_manager.build"):
+        success = mgr.authenticate(force_interactive=False)
+
+    assert success is True
+    assert mgr.channel_name == "Sterlink"
+    assert mgr.is_authenticated() is True
+
+
+def test_load_credentials_preserves_valid_creds_on_build_or_fetch_error(tmp_path):
+    mgr = YouTubeManager()
+    mgr.client_secret_file = str(tmp_path / "client_secret.json")
+    mgr.token_file = str(tmp_path / "yt_token.json")
+    mgr.channel_cache_file = str(tmp_path / "yt_channel.json")
+
+    (tmp_path / "yt_token.json").write_text('{"token": "xyz"}', encoding="utf-8")
+    (tmp_path / "yt_channel.json").write_text('{"channel_name": "Cached Channel"}', encoding="utf-8")
+
+    mock_creds = MagicMock()
+    mock_creds.expired = False
+    mock_creds.valid = True
+
+    # Simulate network failure or googleapiclient build error on startup
+    with patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds), \
+         patch("core.youtube_manager.build", side_effect=RuntimeError("Discovery cache failed")):
+        mgr._load_credentials()
+
+    # Credentials and cached channel name must NOT be wiped
+    assert mgr.credentials is mock_creds
+    assert mgr.channel_name == "Cached Channel"
+    assert mgr.is_authenticated() is True
+
+
+def test_discover_client_secret_from_alternate_locations(tmp_path):
+    mgr = YouTubeManager()
+    appdata_secret = tmp_path / "appdata" / "client_secret.json"
+    alt_secret = tmp_path / "bin" / "client_secret.json"
+    alt_secret.parent.mkdir(parents=True)
+    alt_secret.write_text('{"installed": {"client_id": "123"}}', encoding="utf-8")
+
+    mgr.client_secret_file = str(appdata_secret)
+
+    with patch.object(mgr, "_candidate_secret_paths", return_value=[str(appdata_secret), str(alt_secret)]):
+        found_path = mgr.get_client_secret_path()
+        assert found_path == str(appdata_secret)
+        # Should auto-migrate / copy to AppData
+        assert os.path.exists(str(appdata_secret))
+        assert json.loads(appdata_secret.read_text(encoding="utf-8")) == {"installed": {"client_id": "123"}}
+
+
+def test_discover_token_from_alternate_locations(tmp_path):
+    mgr = YouTubeManager()
+    appdata_token = tmp_path / "appdata" / "yt_token.json"
+    alt_token = tmp_path / "bin" / "yt_token.json"
+    alt_token.parent.mkdir(parents=True)
+    alt_token.write_text('{"token": "persisted_token"}', encoding="utf-8")
+
+    mgr.token_file = str(appdata_token)
+
+    with patch.object(mgr, "_candidate_token_paths", return_value=[str(appdata_token), str(alt_token)]):
+        found_token = mgr.get_token_path()
+        assert found_token == str(appdata_token)
+        # Should auto-migrate / copy to AppData
+        assert os.path.exists(str(appdata_token))
+        assert json.loads(appdata_token.read_text(encoding="utf-8")) == {"token": "persisted_token"}
+
+
+
+
 

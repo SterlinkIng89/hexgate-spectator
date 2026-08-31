@@ -52,7 +52,7 @@ def test_obs_on_bot_stop_keeps_stream_within_schedule():
         mock_disconnect.assert_called_once()
 
 
-def test_start_bot_configures_discord():
+def test_start_bot_configures_youtube():
     from core.hexgate.engine import start_bot
     from core.youtube_manager import youtube_manager
 
@@ -65,11 +65,8 @@ def test_start_bot_configures_discord():
 
     with patch("core.hexgate.engine.prevent_system_sleep"), \
          patch.object(obs_controller, "configure"), \
-         patch.object(youtube_manager, "configure_discord") as mock_conf_discord, \
+         patch.object(youtube_manager, "configure") as mock_conf_yt, \
          patch("core.hexgate.state.bot_state.update_gui_status"):
         start_bot(lambda s: None, config)
-        mock_conf_discord.assert_called_once_with(
-            webhook_url="https://discord.com/api/webhooks/bot_test",
-            enabled=True
-        )
+        mock_conf_yt.assert_called_once_with(config)
 

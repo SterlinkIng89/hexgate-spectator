@@ -152,6 +152,11 @@ class App(ctk.CTk):
         # Render ASCII banner and initial system info
         render_startup_banner(self.log_box, version=APP_VERSION)
 
+        # Register YouTube stream URL updates callback to keep UI in sync
+        youtube_manager.set_url_callback(
+            lambda url: self.after(0, lambda: self.youtube_panel.update_stream_url(url))
+        )
+
         self.after(100, self.process_log_queue)
         self.after(500, self._update_stream_indicator)
 
@@ -164,7 +169,7 @@ class App(ctk.CTk):
 
     def _on_youtube_config_changed(self, yt_config: dict):
         if not self.is_running:
-            pass
+            youtube_manager.configure(yt_config)
 
     def _update_stream_indicator(self):
         """Called every second to refresh the header stream indicator and status details."""
@@ -200,6 +205,7 @@ class App(ctk.CTk):
         self.obs_settings_form.load_config(default_config)
         self.youtube_panel.load_config(default_config)
         obs_controller.configure(self.obs_settings_form.get_config())
+        youtube_manager.configure(self.youtube_panel.get_config())
 
     def save_config(self):
         """Saves current configuration to config.json."""
@@ -297,25 +303,6 @@ class App(ctk.CTk):
             self.lol_settings_form.set_enabled(False)
             self.obs_settings_form.set_enabled(False)
             self.youtube_panel.set_enabled(False)
-
-            # Auto-create YouTube broadcast if enabled
-            if yt_config.get("yt_enabled"):
-                if youtube_manager.is_authenticated():
-                    title_tpl = yt_config.get("yt_stream_title", "EST vs INTZ - {date}")
-                    
-                    def on_broadcast_success(watch_url):
-                        self.after(0, lambda: self.youtube_panel.update_stream_url(watch_url))
-
-                        if obs_controller.cached_status.get("active", False):
-                            youtube_manager.transition_to_live_async()
-
-                    youtube_manager.create_broadcast_async(
-                        title_template=title_tpl,
-                        privacy=yt_config.get("yt_privacy", "unlisted"),
-                        on_success=on_broadcast_success
-                    )
-                else:
-                    logger.warning("[YouTube] YouTube integration is enabled, but the account is NOT authenticated! Skipping broadcast creation.")
 
             self.is_running = True
             self.btn_toggle.configure(text="Stop Bot", fg_color="#e74c3c", hover_color="#c0392b")

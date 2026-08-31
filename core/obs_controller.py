@@ -246,7 +246,10 @@ class OBSController:
                     "connected": True
                 }
                 if is_active:
+                    was_active = self.cached_status.get("active", False)
                     self._mark_stream_started()
+                    if not was_active:
+                        youtube_manager.on_stream_start_async()
                 elif self.cached_status.get("active", False):
                     self._mark_stream_stopped()
                 self.cached_status = res
@@ -331,7 +334,7 @@ class OBSController:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(f"[OBS] Stream started successfully in {elapsed_ms:.1f}ms.")
                 self._mark_stream_started()
-                youtube_manager.transition_to_live_async()
+                youtube_manager.on_stream_start_async()
                 return True
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -339,7 +342,7 @@ class OBSController:
                 if "already active" in err_str or "output_running" in err_str or "code 500" in err_str:
                     logger.info(f"[OBS] Stream is already active ({elapsed_ms:.1f}ms).")
                     self._mark_stream_started()
-                    youtube_manager.transition_to_live_async()
+                    youtube_manager.on_stream_start_async()
                     return True
                 logger.error(f"[OBS] Failed to start stream ({elapsed_ms:.1f}ms): {e}")
                 if _is_obs_unreachable_error(e):

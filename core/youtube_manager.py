@@ -1,4 +1,6 @@
 import os
+import sys
+import shutil
 import json
 import time
 import logging
@@ -45,9 +47,80 @@ class YouTubeManager:
         self._creating_broadcast = False
         self._url_callback = None
 
+    def _candidate_search_dirs(self) -> list[str]:
+        """Returns directories where configuration and credentials might reside."""
+        dirs = []
+        try:
+            dirs.append(os.path.dirname(os.path.abspath(sys.executable)))
+        except Exception:
+            pass
+        try:
+            dirs.append(os.getcwd())
+        except Exception:
+            pass
+        try:
+            dirs.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        except Exception:
+            pass
+        if hasattr(sys, '_MEIPASS'):
+            dirs.append(getattr(sys, '_MEIPASS'))
+        return dirs
+
+    def _candidate_secret_paths(self) -> list[str]:
+        """Returns candidate paths where client_secret.json might be located."""
+        candidates = [self.client_secret_file]
+        for directory in self._candidate_search_dirs():
+            candidates.append(os.path.join(directory, 'client_secret.json'))
+        return list(dict.fromkeys(candidates))
+
+    def get_client_secret_path(self) -> str | None:
+        """
+        Locates client_secret.json from candidate paths.
+        If found outside AppData, automatically copies it to AppData for persistence across builds.
+        """
+        for path in self._candidate_secret_paths():
+            if os.path.isfile(path):
+                if os.path.abspath(path) != os.path.abspath(self.client_secret_file):
+                    try:
+                        os.makedirs(os.path.dirname(os.path.abspath(self.client_secret_file)), exist_ok=True)
+                        shutil.copy2(path, self.client_secret_file)
+                        logger.info(f"[YouTube] Migrated client_secret.json to {self.client_secret_file}")
+                        return self.client_secret_file
+                    except Exception as e:
+                        logger.debug(f"[YouTube] Could not migrate secret to AppData: {e}")
+                        return path
+                return self.client_secret_file
+        return None
+
+    def _candidate_token_paths(self) -> list[str]:
+        """Returns candidate paths where yt_token.json might be located."""
+        candidates = [self.token_file]
+        for directory in self._candidate_search_dirs():
+            candidates.append(os.path.join(directory, 'yt_token.json'))
+        return list(dict.fromkeys(candidates))
+
+    def get_token_path(self) -> str | None:
+        """
+        Locates yt_token.json from candidate paths.
+        If found outside AppData, automatically copies it to AppData.
+        """
+        for path in self._candidate_token_paths():
+            if os.path.isfile(path):
+                if os.path.abspath(path) != os.path.abspath(self.token_file):
+                    try:
+                        os.makedirs(os.path.dirname(os.path.abspath(self.token_file)), exist_ok=True)
+                        shutil.copy2(path, self.token_file)
+                        logger.info(f"[YouTube] Migrated yt_token.json to {self.token_file}")
+                        return self.token_file
+                    except Exception as e:
+                        logger.debug(f"[YouTube] Could not migrate token to AppData: {e}")
+                        return path
+                return self.token_file
+        return None
+
     def is_configured(self) -> bool:
-        """Returns True if the client_secret.json exists in AppData."""
-        return os.path.exists(self.client_secret_file)
+        """Returns True if a valid client_secret.json is discovered."""
+        return bool(self.get_client_secret_path())
 
     def is_authenticated(self) -> bool:
         """Returns True if we have valid or refreshable credentials."""
@@ -75,14 +148,30 @@ class YouTubeManager:
         except Exception as e:
             logger.warning(f"[YouTube] Failed to write channel cache: {e}")
 
+    def _build_youtube_client(self):
+        """Initializes the Google API YouTube v3 client safely."""
+        if not self.credentials or not self.credentials.valid:
+            return
+        try:
+            self.youtube = build('youtube', 'v3', credentials=self.credentials, static_discovery=False)
+        except TypeError:
+            try:
+                self.youtube = build('youtube', 'v3', credentials=self.credentials)
+            except Exception as e:
+                logger.warning(f"[YouTube] API client build error: {e}")
+        except Exception as e:
+            logger.warning(f"[YouTube] API client build error: {e}")
+
     def _load_credentials(self):
         """Loads saved OAuth credentials from token file if present and loads/resolves channel name."""
-        if os.path.exists(self.token_file):
+        token_path = self.get_token_path() or self.token_file
+        if os.path.exists(token_path):
             try:
-                self.credentials = Credentials.from_authorized_user_file(self.token_file, SCOPES)
+                self.credentials = Credentials.from_authorized_user_file(token_path, SCOPES)
                 if self.credentials and self.credentials.expired and self.credentials.refresh_token:
                     try:
                         self.credentials.refresh(Request())
+                        os.makedirs(os.path.dirname(os.path.abspath(self.token_file)), exist_ok=True)
                         with open(self.token_file, 'w', encoding='utf-8') as token:
                             token.write(self.credentials.to_json())
                     except Exception as e:
@@ -93,12 +182,12 @@ class YouTubeManager:
                     self.channel_name = self._read_channel_cache()
 
                     if not self.youtube:
-                        self.youtube = build('youtube', 'v3', credentials=self.credentials)
+                        self._build_youtube_client()
 
                     if not self.channel_name and self.youtube:
                         self._fetch_channel_name()
             except Exception as e:
-                logger.error(f"[YouTube] Error loading credentials: {e}")
+                logger.error(f"[YouTube] Error loading token file: {e}")
                 self.credentials = None
 
     def authenticate(self, force_interactive=False, on_completed=None) -> bool:
@@ -116,24 +205,29 @@ class YouTubeManager:
             success = False
             result_msg = ""
             try:
-                if not self.is_configured():
-                    result_msg = "client_secret.json not found in AppData"
-                    logger.warning(f"[YouTube] {result_msg}")
-                    return
+                if force_interactive:
+                    secret_path = self.get_client_secret_path()
+                    if not secret_path:
+                        result_msg = "client_secret.json not found"
+                        logger.warning(f"[YouTube] {result_msg}")
+                        return
 
-                self._load_credentials()
-
-                if (not self.credentials or not self.credentials.valid) and force_interactive:
                     logger.info("[YouTube] Launching OAuth browser authentication...")
-                    flow = InstalledAppFlow.from_client_secrets_file(self.client_secret_file, SCOPES)
+                    flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
                     self.credentials = flow.run_local_server(port=0, prompt="consent")
+                    os.makedirs(os.path.dirname(os.path.abspath(self.token_file)), exist_ok=True)
                     with open(self.token_file, 'w', encoding='utf-8') as token:
                         token.write(self.credentials.to_json())
+                else:
+                    self._load_credentials()
 
                 if self.credentials and self.credentials.valid:
                     if not self.youtube:
-                        self.youtube = build('youtube', 'v3', credentials=self.credentials)
-                    self._fetch_channel_name()
+                        self._build_youtube_client()
+                    if not self.channel_name:
+                        self.channel_name = self._read_channel_cache()
+                    if not self.channel_name and self.youtube:
+                        self._fetch_channel_name()
                     success = True
                     result_msg = self.channel_name or "Connected"
                 else:
@@ -155,6 +249,7 @@ class YouTubeManager:
         else:
             _auth_worker()
             return self.is_authenticated()
+
 
     def _fetch_channel_name(self):
         """Fetches and caches the channel title for the authenticated user."""

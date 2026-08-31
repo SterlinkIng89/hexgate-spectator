@@ -34,11 +34,16 @@ class YouTubeManager:
         self.active_broadcast_id = None
         self.active_stream_url = None
         self.active_stream_title = None
+        self.enabled = False
+        self.stream_title_template = "EST vs INTZ - {date}"
+        self.privacy = DEFAULT_PRIVACY
         self.discord_webhook_url = None
         self.discord_enabled = False
         self._notified_broadcast_ids = set()
         self._lock = threading.RLock()
         self._auth_in_progress = False
+        self._creating_broadcast = False
+        self._url_callback = None
 
     def is_configured(self) -> bool:
         """Returns True if the client_secret.json exists in AppData."""
@@ -313,6 +318,124 @@ class YouTubeManager:
                     on_error(e)
         threading.Thread(target=_worker, daemon=True, name="YouTubeCreateWorker").start()
 
+    def configure(self, config_dict: dict):
+        """Updates YouTube and Discord integration settings from dictionary."""
+        with self._lock:
+            if "yt_enabled" in config_dict:
+                self.enabled = bool(config_dict.get("yt_enabled"))
+            if "yt_stream_title" in config_dict:
+                self.stream_title_template = config_dict.get("yt_stream_title", "EST vs INTZ - {date}") or "EST vs INTZ - {date}"
+            if "yt_privacy" in config_dict:
+                self.privacy = config_dict.get("yt_privacy", DEFAULT_PRIVACY) or DEFAULT_PRIVACY
+            if "discord_webhook_url" in config_dict:
+                self.discord_webhook_url = (config_dict.get("discord_webhook_url", "") or "").strip()
+            if "discord_enabled" in config_dict:
+                self.discord_enabled = bool(config_dict.get("discord_enabled", False))
+
+    def set_url_callback(self, callback):
+        """Registers a callback(url: str) invoked whenever the active stream URL updates."""
+        with self._lock:
+            self._url_callback = callback
+            if self.active_stream_url and callback:
+                try:
+                    callback(self.active_stream_url)
+                except Exception as e:
+                    logger.warning(f"[YouTube] Initial URL callback error: {e}")
+
+    def _notify_url_changed(self, url: str):
+        """Thread-safely dispatches URL update to registered callback."""
+        with self._lock:
+            cb = self._url_callback
+        if cb:
+            try:
+                cb(url)
+            except Exception as e:
+                logger.warning(f"[YouTube] Stream URL callback error: {e}")
+
+    def find_active_broadcast(self) -> tuple[str, str] | None:
+        """
+        Queries YouTube Data API to locate an existing active or upcoming broadcast on the channel.
+        Returns (broadcast_id, watch_url) if found, else None.
+        """
+        with self._lock:
+            if not self.youtube or not self.is_authenticated():
+                return None
+
+            for status_filter in ["active", "upcoming"]:
+                try:
+                    req = self.youtube.liveBroadcasts().list(
+                        part="id,snippet,status",
+                        broadcastStatus=status_filter,
+                        mine=True
+                    )
+                    res = req.execute()
+                    items = res.get("items", [])
+                    if items:
+                        broadcast = items[0]
+                        bid = broadcast["id"]
+                        title = broadcast.get("snippet", {}).get("title", "Live Stream")
+                        watch_url = f"https://www.youtube.com/watch?v={bid}"
+                        self.active_broadcast_id = bid
+                        self.active_stream_url = watch_url
+                        self.active_stream_title = title
+                        logger.info(f"[YouTube] Discovered {status_filter} broadcast '{title}' ({bid}): {watch_url}")
+                        self._notify_url_changed(watch_url)
+                        return bid, watch_url
+                except Exception as e:
+                    logger.debug(f"[YouTube] Error checking {status_filter} broadcasts: {e}")
+
+            return None
+
+    def on_stream_start(self):
+        """
+        Triggered when OBS starts streaming.
+        Ensures active broadcast exists, receives/updates the watch link, and transitions to LIVE.
+        """
+        if not self.is_authenticated():
+            if not self.authenticate(force_interactive=False):
+                logger.warning("[YouTube] OBS stream started, but YouTube account is not connected. Broadcast link cannot be retrieved.")
+                return
+
+        with self._lock:
+            if self.active_broadcast_id:
+                logger.info(f"[YouTube] OBS stream started with existing broadcast {self.active_broadcast_id}. Transitioning to LIVE...")
+                self.transition_to_live_async(self.active_broadcast_id)
+                return
+
+            if self._creating_broadcast:
+                logger.debug("[YouTube] Broadcast resolution already in progress on stream start.")
+                return
+            self._creating_broadcast = True
+
+        try:
+            # 1. First check if an active/upcoming broadcast already exists on YouTube
+            found = self.find_active_broadcast()
+            if found:
+                bid, _ = found
+                self.transition_to_live_async(bid)
+                return
+
+            # 2. If no broadcast exists and auto-create is enabled, create a new one
+            if self.enabled:
+                logger.info(f"[YouTube] Stream started. Auto-creating live broadcast ('{self.stream_title_template}', {self.privacy})...")
+                bid, watch_url = self.create_broadcast(
+                    title_template=self.stream_title_template,
+                    privacy=self.privacy
+                )
+                self._notify_url_changed(watch_url)
+                self.transition_to_live_async(bid)
+            else:
+                logger.info("[YouTube] OBS stream started, but Auto-create stream is disabled and no active broadcast was found.")
+        except Exception as e:
+            logger.error(f"[YouTube] Failed to manage broadcast on stream start: {e}")
+        finally:
+            with self._lock:
+                self._creating_broadcast = False
+
+    def on_stream_start_async(self):
+        """Non-blocking call to handle stream start broadcast resolution and transition."""
+        threading.Thread(target=self.on_stream_start, daemon=True, name="YTStreamStartWorker").start()
+
     def configure_discord(self, webhook_url: str, enabled: bool = True):
         """Configures Discord webhook notification settings for live broadcast transitions."""
         with self._lock:
@@ -404,10 +527,16 @@ class YouTubeManager:
                 ).execute()
                 logger.info(f"[YouTube] Broadcast {bid} completed.")
                 self.active_broadcast_id = None
+                self.active_stream_url = None
+                self.active_stream_title = None
+                self._notify_url_changed("")
                 return True
             except Exception as e:
                 logger.debug(f"[YouTube] Error completing broadcast {bid}: {e}")
                 self.active_broadcast_id = None
+                self.active_stream_url = None
+                self.active_stream_title = None
+                self._notify_url_changed("")
                 return False
 
     def complete_broadcast_async(self, broadcast_id: str = None):

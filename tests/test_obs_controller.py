@@ -174,9 +174,28 @@ def test_obs_controller_get_stream_status_reconnecting_transition():
     mock_status.output_timecode = "00:01:23"
     mock_client.get_stream_status.return_value = mock_status
 
-    with patch.object(controller, "_ensure_connected", return_value=True):
+    with patch.object(controller, "_ensure_connected", return_value=True), \
+         patch("core.youtube_manager.youtube_manager.on_stream_start_async") as mock_yt_start:
         controller._client = mock_client
         res = controller.get_stream_status()
         assert res["active"] is True
         assert res["reconnecting"] is True
         assert res["timecode"] == "00:01:23"
+        mock_yt_start.assert_called_once()
+
+
+def test_obs_controller_start_stream_triggers_youtube_start():
+    controller = OBSController()
+    controller.enabled = True
+
+    mock_client = MagicMock()
+    mock_client.start_stream.return_value = None
+
+    with patch.object(controller, "_ensure_connected", return_value=True), \
+         patch("core.youtube_manager.youtube_manager.on_stream_start_async") as mock_yt_start:
+        controller._client = mock_client
+        res = controller.start_stream()
+        assert res is True
+        mock_client.start_stream.assert_called_once()
+        mock_yt_start.assert_called_once()
+

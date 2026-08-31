@@ -339,3 +339,104 @@ def test_logout_resets_discord_state():
     assert len(mgr._notified_broadcast_ids) == 0
 
 
+def test_youtube_manager_configure():
+    mgr = YouTubeManager()
+    mgr.configure({
+        "yt_enabled": True,
+        "yt_stream_title": "Custom Title - {date}",
+        "yt_privacy": "private",
+        "discord_webhook_url": "https://discord.com/webhook",
+        "discord_enabled": True
+    })
+    assert mgr.enabled is True
+    assert mgr.stream_title_template == "Custom Title - {date}"
+    assert mgr.privacy == "private"
+    assert mgr.discord_webhook_url == "https://discord.com/webhook"
+    assert mgr.discord_enabled is True
+
+
+def test_set_url_callback_dispatches_updates():
+    mgr = YouTubeManager()
+    urls_received = []
+
+    def callback(url):
+        urls_received.append(url)
+
+    mgr.set_url_callback(callback)
+    mgr._notify_url_changed("https://www.youtube.com/watch?v=123")
+    assert urls_received == ["https://www.youtube.com/watch?v=123"]
+
+
+def test_find_active_broadcast_success():
+    mgr = YouTubeManager()
+    mock_creds = MagicMock()
+    mock_creds.valid = True
+    mgr.credentials = mock_creds
+
+    mock_yt = MagicMock()
+    mgr.youtube = mock_yt
+
+    mock_list = MagicMock()
+    mock_list.execute.return_value = {
+        "items": [
+            {
+                "id": "existing_active_bid",
+                "snippet": {"title": "Active Live Broadcast"}
+            }
+        ]
+    }
+    mock_yt.liveBroadcasts().list.return_value = mock_list
+
+    res = mgr.find_active_broadcast()
+    assert res == ("existing_active_bid", "https://www.youtube.com/watch?v=existing_active_bid")
+    assert mgr.active_broadcast_id == "existing_active_bid"
+    assert mgr.active_stream_url == "https://www.youtube.com/watch?v=existing_active_bid"
+    assert mgr.active_stream_title == "Active Live Broadcast"
+
+
+def test_on_stream_start_creates_broadcast_when_enabled():
+    mgr = YouTubeManager()
+    mgr.enabled = True
+    mgr.stream_title_template = "Match - {date}"
+    mgr.privacy = "unlisted"
+
+    with patch.object(mgr, "is_authenticated", return_value=True), \
+         patch.object(mgr, "find_active_broadcast", return_value=None), \
+         patch.object(mgr, "create_broadcast", return_value=("new_bid", "https://www.youtube.com/watch?v=new_bid")) as mock_create, \
+         patch.object(mgr, "transition_to_live_async") as mock_trans:
+        
+        callback_urls = []
+        mgr.set_url_callback(lambda url: callback_urls.append(url))
+
+        mgr.on_stream_start()
+
+        mock_create.assert_called_once_with(title_template="Match - {date}", privacy="unlisted")
+        mock_trans.assert_called_once_with("new_bid")
+        assert callback_urls == ["https://www.youtube.com/watch?v=new_bid"]
+
+
+def test_on_stream_start_discovers_active_broadcast():
+    mgr = YouTubeManager()
+    mgr.enabled = False
+
+    with patch.object(mgr, "is_authenticated", return_value=True), \
+         patch.object(mgr, "find_active_broadcast", return_value=("found_bid", "https://www.youtube.com/watch?v=found_bid")), \
+         patch.object(mgr, "create_broadcast") as mock_create, \
+         patch.object(mgr, "transition_to_live_async") as mock_trans:
+        
+        mgr.on_stream_start()
+
+        mock_create.assert_not_called()
+        mock_trans.assert_called_once_with("found_bid")
+
+
+def test_on_stream_start_not_authenticated():
+    mgr = YouTubeManager()
+    with patch.object(mgr, "is_authenticated", return_value=False), \
+         patch.object(mgr, "authenticate", return_value=False), \
+         patch.object(mgr, "create_broadcast") as mock_create:
+        mgr.on_stream_start()
+        mock_create.assert_not_called()
+
+
+

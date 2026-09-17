@@ -1,0 +1,98 @@
+﻿name: Daily Issue Auditor
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  audit-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Audit Open Issues
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const date = new Date();
+            date.setDate(date.getDate() - 1);
+            const since = date.toISOString();
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              since: since
+            });
+
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+
+              const prompt = `
+                You are a strict issue auditor for a software repository.
+                Evaluate the following issue based on these exact rules:
+                1. Structure: It must have clear sections (e.g., Description, Expected Result, Actual Result, or Acceptance Criteria).
+                2. Links: It should ideally reference other issues or PRs if it is a subtask.
+                3. Labeling: Determine the most appropriate label (bug, enhancement, documentation, question).
+
+                Issue Title: ${issue.title}
+                Issue Body: ${issue.body || 'No description provided.'}
+
+                Respond strictly in JSON format:
+                {
+                  "compliant": true,
+                  "feedback": "If false, provide a short, professional message indicating what format or sections are missing. If true, leave empty.",
+                  "suggested_label": "bug|enhancement|documentation|question"
+                }
+              `;
+
+              const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  model: 'gpt-4o-mini',
+                  messages: [{ role: 'user', content: prompt }],
+                  response_format: { type: "json_object" }
+                })
+              });
+
+              const data = await response.json();
+              const aiResult = JSON.parse(data.choices[0].message.content);
+
+              if (aiResult.suggested_label) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: [aiResult.suggested_label]
+                });
+              }
+
+              if (!aiResult.compliant) {
+                const commentBody = `⚠️ **Issue Format Notice**\n\n${aiResult.feedback}\n\nPlease update the issue description to follow the repository standards.`;
+                
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                });
+                
+                const alreadyWarned = comments.some(c => c.body.includes('Issue Format Notice'));
+                
+                if (!alreadyWarned) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: commentBody
+                  });
+                }
+              }
+            }

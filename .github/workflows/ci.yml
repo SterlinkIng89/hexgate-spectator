@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     name: Python Test Suite
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -19,11 +19,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk xvfb
           python -m pip install --upgrade pip
-          pip install pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-asyncio
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
 
       - name: Run Tests
-        run: xvfb-run -a pytest -v
+        run: pytest -v

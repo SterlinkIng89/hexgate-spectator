@@ -365,3 +365,21 @@ def test_obs_settings_form_shutdown_disabled_when_form_disabled(tk_root):
     form.set_enabled(True)
     assert form.check_obs_shutdown.cget("state") == "normal"
     assert form.combo_shutdown_delay.cget("state") == "normal"
+
+
+def test_obs_settings_form_shutdown_toggle_only_cancels_if_scheduled(tk_root):
+    with patch("gui.components.obs_settings_form.cancel_shutdown") as mock_cancel, \
+         patch("gui.components.obs_settings_form.is_shutdown_scheduled") as mock_is_scheduled:
+        form = ObsSettingsForm(tk_root)
+        form.check_obs_shutdown.deselect()
+
+        # Case 1: When no shutdown is scheduled, toggling off should NOT call cancel_shutdown
+        mock_is_scheduled.return_value = False
+        form._on_toggle_obs_shutdown()
+        mock_cancel.assert_not_called()
+
+        # Case 2: When a shutdown is scheduled, toggling off SHOULD call cancel_shutdown
+        mock_is_scheduled.return_value = True
+        form._on_toggle_obs_shutdown()
+        mock_cancel.assert_called_once()
+

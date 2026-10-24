@@ -2,7 +2,7 @@ import logging
 import threading
 import customtkinter as ctk
 from core.obs_controller import obs_controller
-from core.power import cancel_shutdown
+from core.power import cancel_shutdown, is_shutdown_scheduled
 from gui.components.collapsible_frame import CollapsibleFrame
 from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_section_font
@@ -289,7 +289,7 @@ class ObsSettingsForm(CollapsibleFrame):
         is_shutdown = (self.check_obs_enabled.get() == 1 and self.check_obs_shutdown.get() == 1)
         sched_state = "normal" if is_shutdown else "disabled"
         self.combo_shutdown_delay.configure(state=sched_state)
-        if self.check_obs_shutdown.get() == 0:
+        if self.check_obs_shutdown.get() == 0 and is_shutdown_scheduled():
             cancel_shutdown()
         self._notify_change()
 

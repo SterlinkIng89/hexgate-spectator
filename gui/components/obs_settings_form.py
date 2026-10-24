@@ -233,20 +233,8 @@ class ObsSettingsForm(CollapsibleFrame):
         except Exception:
             return "04", "00", "PM"
 
-    def _on_start_time_changed(self, _choice=None):
-        """Automatically updates stop time to start time + 6 hours when start time changes."""
-        sh = self.combo_start_hour.get()
-        sm = self.combo_start_min.get()
-        sampm = self.combo_start_ampm.get()
-
-        eh, em, eampm = self._calculate_stop_time_from_start(sh, sm, sampm, offset_hours=6)
-        self._set_combo_value(self.combo_stop_hour, eh)
-        self._set_combo_value(self.combo_stop_min, em)
-        self._set_combo_value(self.combo_stop_ampm, eampm)
-        self._notify_change()
-
-    def _on_stop_time_changed(self, _choice=None):
-        """Validates stop time so it cannot be less than start hour / enforces minimum duration logic."""
+    def _validate_schedule_times(self) -> None:
+        """Validates that stop time is strictly later than start time, falling back to start + 6h if invalid."""
         start_24 = self._to_24h(self.combo_start_hour.get(), self.combo_start_min.get(), self.combo_start_ampm.get())
         stop_24 = self._to_24h(self.combo_stop_hour.get(), self.combo_stop_min.get(), self.combo_stop_ampm.get())
 
@@ -266,9 +254,15 @@ class ObsSettingsForm(CollapsibleFrame):
                 self._set_combo_value(self.combo_stop_min, em_str)
                 self._set_combo_value(self.combo_stop_ampm, eampm_str)
         except Exception as e:
-            logging.debug(f"Error validating stop time: {e}")
+            logging.debug(f"Error validating schedule times: {e}")
 
         self._notify_change()
+
+    def _on_start_time_changed(self, _choice=None) -> None:
+        self._validate_schedule_times()
+
+    def _on_stop_time_changed(self, _choice=None) -> None:
+        self._validate_schedule_times()
 
     def _on_toggle_obs_enabled(self):
         """Updates OBS entry states depending on whether OBS integration is enabled."""
@@ -358,10 +352,20 @@ class ObsSettingsForm(CollapsibleFrame):
             elif not current_collection and scene_collections:
                 self._set_combo_value(self.combo_obs_scene_collection, scene_collections[0])
 
+        feedback_text = "✓ Found" if (profiles or scene_collections) else "✕ Offline"
         self.btn_scan_obs.configure(
             state="normal" if self.check_obs_enabled.get() == 1 else "disabled",
-            text="Scan OBS",
+            text=feedback_text,
         )
+
+        def _restore_btn():
+            try:
+                if self.winfo_exists():
+                    self.btn_scan_obs.configure(text="Scan OBS")
+            except Exception:
+                pass
+
+        self.after(2000, _restore_btn)
         self._notify_change()
 
     def load_config(self, config: dict) -> None:

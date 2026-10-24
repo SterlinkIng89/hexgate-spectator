@@ -175,6 +175,66 @@ def test_lol_settings_form_runtime_config_validation(tk_root):
     assert form.get_runtime_config()["camera_delay"] == 3.0
 
 
+def test_lol_settings_invite_only_disables_search_entries(tk_root):
+    form = LolSettingsForm(tk_root)
+    form.load_config({
+        "lobby_name": "LobbyA",
+        "passwords": "123",
+        "ignored_words": "AC",
+        "camera_delay": "4",
+        "invite_only": 0,
+    })
+
+    # Default/search mode: entries are normal
+    assert form.entry_lobby.cget("state") == "normal"
+    assert form.entry_passwords.cget("state") == "normal"
+    assert form.entry_ignored.cget("state") == "normal"
+    assert form.entry_delay.cget("state") == "normal"
+
+    # Toggle invite only ON
+    form.check_invite_only.select()
+    form._on_toggle_invite_only()
+    assert form.entry_lobby.cget("state") == "disabled"
+    assert form.entry_passwords.cget("state") == "disabled"
+    assert form.entry_ignored.cget("state") == "disabled"
+    assert form.entry_delay.cget("state") == "normal"
+
+    # Values preserved in config
+    cfg = form.get_config()
+    assert cfg["lobby_name"] == "LobbyA"
+    assert cfg["passwords"] == "123"
+    assert cfg["ignored_words"] == "AC"
+    assert cfg["camera_delay"] == "4"
+    assert cfg["invite_only"] == 1
+
+    # Runtime config also preserves values
+    rt_cfg = form.get_runtime_config()
+    assert rt_cfg["lobby_name"] == "LobbyA"
+    assert rt_cfg["passwords"] == ["123"]
+    assert rt_cfg["ignored_words"] == ["AC"]
+    assert rt_cfg["invite_only"] is True
+
+    # When whole form disabled and re-enabled, invite-only disabled states are restored
+    form.set_enabled(False)
+    assert form.entry_delay.cget("state") == "disabled"
+    assert form.check_invite_only.cget("state") == "disabled"
+
+    form.set_enabled(True)
+    assert form.entry_delay.cget("state") == "normal"
+    assert form.check_invite_only.cget("state") == "normal"
+    assert form.entry_lobby.cget("state") == "disabled"
+    assert form.entry_passwords.cget("state") == "disabled"
+    assert form.entry_ignored.cget("state") == "disabled"
+
+    # Toggle invite only back OFF
+    form.check_invite_only.deselect()
+    form._on_toggle_invite_only()
+    assert form.entry_lobby.cget("state") == "normal"
+    assert form.entry_passwords.cget("state") == "normal"
+    assert form.entry_ignored.cget("state") == "normal"
+    assert form.entry_delay.cget("state") == "normal"
+
+
 def test_obs_settings_form_summary_updates(tk_root):
     form = ObsSettingsForm(tk_root, collapsed=True)
     assert form._summary_text == "Disabled"
@@ -242,7 +302,43 @@ def test_obs_settings_form_scan_results_application(tk_root):
     assert form.combo_obs_profile.get() == "Default"
     assert form.combo_obs_scene_collection.cget("values") == scenes
     assert form.combo_obs_scene_collection.get() == "Main Overlay"
-    assert form.btn_scan_obs.cget("text") == "Scan OBS"
+    assert form.btn_scan_obs.cget("text") == "✓ Found"
+
+    # Empty scan results show offline feedback
+    form._apply_scan_results([], [])
+    assert form.btn_scan_obs.cget("text") == "✕ Offline"
+
+
+def test_obs_settings_form_start_time_preserves_custom_stop_time(tk_root):
+    form = ObsSettingsForm(tk_root)
+    # Configure custom schedule: 10:00 AM to 05:00 PM (17:00)
+    form.load_config({
+        "obs_enabled": 1,
+        "obs_schedule_enabled": 1,
+        "obs_schedule_start_time": "10:00",
+        "obs_schedule_stop_time": "17:00",
+    })
+    assert form.combo_stop_hour.get() == "05"
+    assert form.combo_stop_ampm.get() == "PM"
+
+    # Change start time to 11:00 AM (11:00 < 17:00, still valid duration)
+    form._set_combo_value(form.combo_start_hour, "11")
+    form._on_start_time_changed()
+
+    # User's custom stop time should be preserved
+    assert form.combo_stop_hour.get() == "05"
+    assert form.combo_stop_min.get() == "00"
+    assert form.combo_stop_ampm.get() == "PM"
+
+    # Change start time to 06:00 PM (18:00 >= 17:00, stop becomes <= start)
+    form._set_combo_value(form.combo_start_hour, "06")
+    form._set_combo_value(form.combo_start_ampm, "PM")
+    form._on_start_time_changed()
+
+    # Automatically updates stop time to start + 6h (06:00 PM + 6h = 12:00 AM)
+    assert form.combo_stop_hour.get() == "12"
+    assert form.combo_stop_min.get() == "00"
+    assert form.combo_stop_ampm.get() == "AM"
 
 
 def test_set_entry_text_helper_behavior(tk_root):
@@ -406,6 +502,75 @@ def test_youtube_panel_privacy_enabled_state(tk_root):
     panel.check_yt_enabled.deselect()
     panel._on_toggle_enabled()
     assert panel.option_privacy.cget("state") == "disabled"
+
+
+def test_youtube_panel_discord_webhook_masking_on_focus(tk_root):
+    panel = YouTubePanel(tk_root)
+    # Default without URL -> mask empty (placeholder visible)
+    assert panel.entry_discord_webhook.cget("show") == ""
+
+    # Load populated webhook URL -> masked with bullet
+    panel.load_config({"discord_webhook_url": "https://discord.com/api/webhooks/123/token"})
+    assert panel.entry_discord_webhook.cget("show") == "•"
+
+    # FocusIn reveals plain text
+    panel._on_webhook_focus_in()
+    assert panel.entry_discord_webhook.cget("show") == ""
+
+    # FocusOut restores bullet mask
+    panel._on_webhook_focus_out()
+    assert panel.entry_discord_webhook.cget("show") == "•"
+
+    # Emptying the field and focusing out clears show
+    panel.entry_discord_webhook.delete(0, "end")
+    panel._on_webhook_focus_out()
+    assert panel.entry_discord_webhook.cget("show") == ""
+
+
+def test_youtube_panel_discord_test_button(tk_root):
+    with patch("gui.components.youtube_panel.send_discord_notification_async") as mock_notify:
+        panel = YouTubePanel(tk_root)
+        panel.entry_discord_webhook.delete(0, "end")
+
+        # Empty webhook URL gives "No URL" feedback
+        panel._test_discord_webhook()
+        mock_notify.assert_not_called()
+        assert panel.btn_test_discord.cget("text") == "No URL"
+
+        # Populated webhook URL dispatches notification and gives "Sent!"
+        panel.entry_discord_webhook.insert(0, "https://discord.com/api/webhooks/123/token")
+        panel._test_discord_webhook()
+        mock_notify.assert_called_once()
+        assert panel.btn_test_discord.cget("text") == "Sent!"
+
+
+def test_youtube_panel_title_live_preview(tk_root):
+    panel = YouTubePanel(tk_root)
+    panel.entry_stream_title.delete(0, "end")
+    panel.entry_stream_title.insert(0, "Test Match - {date}")
+    panel._update_title_preview()
+    assert panel.lbl_title_preview.cget("text").startswith("Preview: Test Match - ")
+
+
+def test_youtube_panel_open_stream_button(tk_root):
+    with patch("gui.components.youtube_panel.webbrowser.open") as mock_open:
+        panel = YouTubePanel(tk_root)
+        assert panel.btn_open_link.cget("state") == "disabled"
+
+        # Opening when disabled does not launch browser
+        panel._open_stream_url()
+        mock_open.assert_not_called()
+
+        # Update stream URL enables open button
+        panel.update_stream_url("https://youtube.com/live/abc123xyz")
+        assert panel.btn_open_link.cget("state") == "normal"
+
+        panel._open_stream_url()
+        mock_open.assert_called_once_with("https://youtube.com/live/abc123xyz")
+
+        # Clearing URL disables open button
+        panel.update_stream_url("")
+        assert panel.btn_open_link.cget("state") == "disabled"
 
 
 def test_obs_settings_form_shutdown_config_and_widgets(tk_root):

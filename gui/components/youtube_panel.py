@@ -1,6 +1,8 @@
 import logging
+import webbrowser
 import customtkinter as ctk
-from core.youtube_manager import youtube_manager
+from core.youtube_manager import YouTubeManager, youtube_manager
+from core.discord_notifier import send_discord_notification_async
 from gui.entry_utils import set_entry_text
 from gui.fonts import get_label_font, get_status_font, get_sub_font, get_small_font
 from gui.components.surface_card import SurfaceCard
@@ -64,7 +66,7 @@ class YouTubePanel(SurfaceCard):
 
         # Middle row: Stream Title Entry & Privacy
         self.title_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.title_frame.pack(fill="x", padx=12, pady=(4, 6))
+        self.title_frame.pack(fill="x", padx=12, pady=(4, 2))
 
         self.lbl_title = ctk.CTkLabel(self.title_frame, text="Stream Title:", font=label_font, width=90, anchor="w")
         self.lbl_title.pack(side="left", padx=(0, 6))
@@ -76,6 +78,7 @@ class YouTubePanel(SurfaceCard):
         )
         self.entry_stream_title.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_stream_title.insert(0, "EST vs INTZ - {date}")
+        self.entry_stream_title.bind("<KeyRelease>", self._update_title_preview, add="+")
 
         self.lbl_privacy = ctk.CTkLabel(self.title_frame, text="Privacy:", font=label_font, anchor="w")
         self.lbl_privacy.pack(side="left", padx=(0, 6))
@@ -90,6 +93,16 @@ class YouTubePanel(SurfaceCard):
         )
         self.option_privacy.set(DEFAULT_PRIVACY_DISPLAY)
         self.option_privacy.pack(side="left")
+
+        # Title dynamic preview caption
+        self.lbl_title_preview = ctk.CTkLabel(
+            self,
+            text="",
+            font=sub_font,
+            text_color="#888888",
+            anchor="w"
+        )
+        self.lbl_title_preview.pack(fill="x", padx=(108, 12), pady=(0, 4))
 
         # Discord Webhook row
         self.discord_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -106,14 +119,27 @@ class YouTubePanel(SurfaceCard):
         )
         self.check_discord_enabled.pack(side="right", padx=(8, 0))
 
+        self.btn_test_discord = ctk.CTkButton(
+            self.discord_frame,
+            text="Test",
+            font=small_font,
+            width=52,
+            height=26,
+            command=self._test_discord_webhook
+        )
+        self.btn_test_discord.pack(side="right", padx=(8, 0))
+
         self.entry_discord_webhook = ctk.CTkEntry(
             self.discord_frame,
             placeholder_text="Optional: Webhook URL to auto-post stream link",
-            font=label_font
+            font=label_font,
+            show="•"
         )
         self.entry_discord_webhook.pack(side="left", fill="x", expand=True)
+        self.entry_discord_webhook.bind("<FocusIn>", self._on_webhook_focus_in, add="+")
+        self.entry_discord_webhook.bind("<FocusOut>", self._on_webhook_focus_out, add="+")
 
-        # Bottom row: Live Stream URL & Copy action (visible once created)
+        # Bottom row: Live Stream URL & Copy / Open actions (visible once created)
         self.link_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.link_frame.pack(fill="x", padx=12, pady=(0, 8))
 
@@ -140,8 +166,21 @@ class YouTubePanel(SurfaceCard):
         )
         self.btn_copy_link.pack(side="right")
 
+        self.btn_open_link = ctk.CTkButton(
+            self.link_frame,
+            text="Open",
+            font=small_font,
+            width=65,
+            height=24,
+            state="disabled",
+            command=self._open_stream_url
+        )
+        self.btn_open_link.pack(side="right", padx=(0, 6))
+
         # Check existing credentials on startup
         self.refresh_auth_state()
+        self._update_title_preview()
+        self._update_webhook_mask()
 
     def refresh_auth_state(self):
         """Checks if YouTube token exists and updates UI labels and button text."""
@@ -189,6 +228,46 @@ class YouTubePanel(SurfaceCard):
     def _on_privacy_changed(self, _choice=None):
         self._notify_change()
 
+    def _on_webhook_focus_in(self, _event=None) -> None:
+        self.entry_discord_webhook.configure(show="")
+
+    def _on_webhook_focus_out(self, _event=None) -> None:
+        self._update_webhook_mask()
+
+    def _update_webhook_mask(self) -> None:
+        if self.entry_discord_webhook.get().strip():
+            self.entry_discord_webhook.configure(show="•")
+        else:
+            self.entry_discord_webhook.configure(show="")
+
+    def _update_title_preview(self, _event=None) -> None:
+        template = self.entry_stream_title.get().strip() or "EST vs INTZ - {date}"
+        formatted = YouTubeManager.format_title(template)
+        self.lbl_title_preview.configure(text=f"Preview: {formatted}")
+
+    def _test_discord_webhook(self) -> None:
+        url = self.entry_discord_webhook.get().strip()
+        if not url:
+            self.btn_test_discord.configure(text="No URL")
+            self.after(1500, self._restore_test_btn)
+            return
+
+        title = YouTubeManager.format_title(self.entry_stream_title.get().strip() or "EST vs INTZ - {date}")
+        send_discord_notification_async(url, title, "https://www.youtube.com/watch?v=test")
+        self.btn_test_discord.configure(text="Sent!")
+        self.after(1500, self._restore_test_btn)
+
+    def _restore_test_btn(self) -> None:
+        try:
+            if self.winfo_exists():
+                self.btn_test_discord.configure(text="Test")
+        except Exception:
+            pass
+
+    def _open_stream_url(self) -> None:
+        if self._current_stream_url:
+            webbrowser.open(self._current_stream_url)
+
     def _on_toggle_enabled(self):
         is_on = self.check_yt_enabled.get() == 1
         state = "normal" if is_on else "disabled"
@@ -198,27 +277,32 @@ class YouTubePanel(SurfaceCard):
         if not is_on:
             self.check_discord_enabled.configure(state="disabled")
             self.entry_discord_webhook.configure(state="disabled")
+            self.btn_test_discord.configure(state="disabled")
         else:
             self.check_discord_enabled.configure(state="normal")
             discord_on = self.check_discord_enabled.get() == 1
             self.entry_discord_webhook.configure(state="normal" if discord_on else "disabled")
+            self.btn_test_discord.configure(state="normal" if discord_on else "disabled")
             
         self._notify_change()
 
     def _on_toggle_discord_enabled(self):
         discord_on = self.check_discord_enabled.get() == 1 and self.check_yt_enabled.get() == 1
         self.entry_discord_webhook.configure(state="normal" if discord_on else "disabled")
+        self.btn_test_discord.configure(state="normal" if discord_on else "disabled")
         self._notify_change()
 
     def update_stream_url(self, url: str):
-        """Displays the generated live stream URL and enables copy button."""
+        """Displays the generated live stream URL and enables copy/open buttons."""
         self._current_stream_url = url.strip() if url else ""
         if self._current_stream_url:
             self.lbl_stream_url.configure(text=self._current_stream_url, text_color="#5dade2")
             self.btn_copy_link.configure(state="normal", text="Copy Link")
+            self.btn_open_link.configure(state="normal")
         else:
             self.lbl_stream_url.configure(text="No active broadcast", text_color="#888888")
             self.btn_copy_link.configure(state="disabled", text="Copy Link")
+            self.btn_open_link.configure(state="disabled")
 
     def _copy_stream_url(self):
         """Copies stream URL to clipboard with quick visual confirmation."""
@@ -248,11 +332,13 @@ class YouTubePanel(SurfaceCard):
             self.check_discord_enabled.configure(state="normal" if is_on else "disabled")
             discord_on = self.check_discord_enabled.get() == 1
             self.entry_discord_webhook.configure(state="normal" if (is_on and discord_on) else "disabled")
+            self.btn_test_discord.configure(state="normal" if (is_on and discord_on) else "disabled")
         else:
             self.entry_stream_title.configure(state="disabled")
             self.option_privacy.configure(state="disabled")
             self.check_discord_enabled.configure(state="disabled")
             self.entry_discord_webhook.configure(state="disabled")
+            self.btn_test_discord.configure(state="disabled")
             self.check_yt_enabled.configure(state="disabled")
             self.btn_auth.configure(state="disabled")
 
@@ -285,6 +371,8 @@ class YouTubePanel(SurfaceCard):
 
         self._on_toggle_enabled()
         self.refresh_auth_state()
+        self._update_title_preview()
+        self._update_webhook_mask()
 
     def get_config(self) -> dict:
         """Returns current YouTube & Discord settings dictionary."""

@@ -65,7 +65,7 @@ class LolSettingsForm(CollapsibleFrame):
             self.content_frame,
             text="Invite Only Mode (Don't search)",
             font=label_font,
-            command=self._update_summary,
+            command=self._on_toggle_invite_only,
         )
         self.check_invite_only.grid(row=2, column=0, columnspan=4, padx=10, pady=6, sticky="w")
 
@@ -82,6 +82,13 @@ class LolSettingsForm(CollapsibleFrame):
             self.check_invite_only,
         ]
 
+        self._on_toggle_invite_only()
+
+    def _on_toggle_invite_only(self) -> None:
+        state = "disabled" if self.check_invite_only.get() == 1 else "normal"
+        self.entry_lobby.configure(state=state)
+        self.entry_passwords.configure(state=state)
+        self.entry_ignored.configure(state=state)
         self._update_summary()
 
     def _update_summary(self, _event=None) -> None:
@@ -94,9 +101,13 @@ class LolSettingsForm(CollapsibleFrame):
         self.set_summary(summary)
 
     def set_enabled(self, enabled: bool) -> None:
-        state = "normal" if enabled else "disabled"
-        for w in self._widgets:
-            w.configure(state=state)
+        if not enabled:
+            for w in self._widgets:
+                w.configure(state="disabled")
+        else:
+            self.check_invite_only.configure(state="normal")
+            self.entry_delay.configure(state="normal")
+            self._on_toggle_invite_only()
 
     def load_config(self, config: dict) -> None:
         set_entry_text(self.entry_lobby, config.get("lobby_name", ""))
@@ -109,7 +120,7 @@ class LolSettingsForm(CollapsibleFrame):
         else:
             self.check_invite_only.deselect()
 
-        self._update_summary()
+        self._on_toggle_invite_only()
 
     def get_config(self) -> dict:
         return {

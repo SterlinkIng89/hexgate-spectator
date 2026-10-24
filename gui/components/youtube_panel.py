@@ -146,7 +146,7 @@ class YouTubePanel(SurfaceCard):
     def refresh_auth_state(self):
         """Checks if YouTube token exists and updates UI labels and button text."""
         try:
-            if youtube_manager.is_authenticated() or youtube_manager.authenticate(force_interactive=False):
+            if youtube_manager.is_authenticated():
                 name = youtube_manager.channel_name or "Connected"
                 self.status_dot.configure(text_color="#2ecc71")
                 self.account_label.configure(text=f"YouTube: {name}", text_color="#2ecc71")

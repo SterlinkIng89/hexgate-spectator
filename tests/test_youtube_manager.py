@@ -542,7 +542,64 @@ def test_discover_token_from_alternate_locations(tmp_path):
         assert os.path.exists(str(appdata_token))
         assert json.loads(appdata_token.read_text(encoding="utf-8")) == {"token": "persisted_token"}
 
+def test_load_credentials_removes_token_on_invalid_grant(tmp_path):
+    mgr = YouTubeManager()
+    token_file = tmp_path / "yt_token.json"
+    cache_file = tmp_path / "yt_channel_cache.json"
+    token_file.write_text('{"token": "dummy_expired_token"}', encoding="utf-8")
+    cache_file.write_text('{"channel_name": "Old Channel"}', encoding="utf-8")
+
+    mgr.token_file = str(token_file)
+    mgr.channel_cache_file = str(cache_file)
+    mgr.channel_name = "Old Channel"
+
+    mock_creds = MagicMock()
+    mock_creds.expired = True
+    mock_creds.refresh_token = "dummy_refresh_token"
+    mock_creds.refresh.side_effect = Exception("invalid_grant: Bad Request")
+
+    with patch.object(mgr, "get_token_path", return_value=str(token_file)), \
+         patch.object(mgr, "_candidate_token_paths", return_value=[str(token_file)]), \
+         patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds):
+        mgr._load_credentials()
+
+    assert mgr.credentials is None
+    assert mgr.channel_name is None
+    assert not os.path.exists(str(token_file))
+    assert not os.path.exists(str(cache_file))
 
 
+def test_load_credentials_preserves_token_on_transient_network_error(tmp_path):
+    mgr = YouTubeManager()
+    token_file = tmp_path / "yt_token.json"
+    token_file.write_text('{"token": "dummy_token"}', encoding="utf-8")
+
+    mgr.token_file = str(token_file)
+
+    mock_creds = MagicMock()
+    mock_creds.expired = True
+    mock_creds.refresh_token = "dummy_refresh_token"
+    mock_creds.refresh.side_effect = ConnectionError("Connection reset by peer")
+
+    with patch.object(mgr, "get_token_path", return_value=str(token_file)), \
+         patch.object(mgr, "_candidate_token_paths", return_value=[str(token_file)]), \
+         patch("core.youtube_manager.Credentials.from_authorized_user_file", return_value=mock_creds):
+        mgr._load_credentials()
+
+    assert mgr.credentials is None
+    assert os.path.exists(str(token_file))
 
 
+def test_load_credentials_removes_corrupted_json_token(tmp_path):
+    mgr = YouTubeManager()
+    token_file = tmp_path / "yt_token.json"
+    token_file.write_text('not-valid-json{{{', encoding="utf-8")
+
+    mgr.token_file = str(token_file)
+
+    with patch.object(mgr, "get_token_path", return_value=str(token_file)), \
+         patch.object(mgr, "_candidate_token_paths", return_value=[str(token_file)]):
+        mgr._load_credentials()
+
+    assert mgr.credentials is None
+    assert not os.path.exists(str(token_file))

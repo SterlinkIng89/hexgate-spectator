@@ -1,9 +1,13 @@
 import time
 import requests
 import logging
-import pydirectinput
 import threading
 import urllib3
+
+try:
+    import pydirectinput
+except Exception:
+    pydirectinput = None
 
 # Suppress self-signed certificate warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -45,6 +49,10 @@ def wait_for_game_and_setup_camera(delay=3.0):
     # Wait for the configured delay
     logger.info(f"Waiting {delay} seconds (Configured Delay)...")
     time.sleep(delay)
+
+    if pydirectinput is None:
+        logger.warning("Camera automation skipped: pydirectinput is unavailable on this platform.")
+        return
     
     try:
         logger.info("Sending keyboard shortcuts (Shift + Z)...")

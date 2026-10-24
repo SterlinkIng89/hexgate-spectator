@@ -61,8 +61,18 @@ class LolSettingsForm(CollapsibleFrame):
         self.entry_ignored = ctk.CTkEntry(self.content_frame, placeholder_text="e.g.: Academy, AC", font=label_font, width=140)
         self.entry_ignored.grid(row=1, column=3, padx=10, pady=4, sticky="we")
 
-        self.check_invite_only = ctk.CTkSwitch(self.content_frame, text="Invite Only Mode (Don't search)", font=label_font)
+        self.check_invite_only = ctk.CTkSwitch(
+            self.content_frame,
+            text="Invite Only Mode (Don't search)",
+            font=label_font,
+            command=self._on_toggle_invite_only,
+        )
         self.check_invite_only.grid(row=2, column=0, columnspan=4, padx=10, pady=6, sticky="w")
+
+        self.entry_lobby.bind("<FocusOut>", self._update_summary, add="+")
+        self.entry_lobby.bind("<KeyRelease>", self._update_summary, add="+")
+        self.entry_delay.bind("<FocusOut>", self._update_summary, add="+")
+        self.entry_delay.bind("<KeyRelease>", self._update_summary, add="+")
 
         self._widgets = [
             self.entry_lobby,
@@ -72,10 +82,32 @@ class LolSettingsForm(CollapsibleFrame):
             self.check_invite_only,
         ]
 
+        self._on_toggle_invite_only()
+
+    def _on_toggle_invite_only(self) -> None:
+        state = "disabled" if self.check_invite_only.get() == 1 else "normal"
+        self.entry_lobby.configure(state=state)
+        self.entry_passwords.configure(state=state)
+        self.entry_ignored.configure(state=state)
+        self._update_summary()
+
+    def _update_summary(self, _event=None) -> None:
+        if self.check_invite_only.get() == 1:
+            summary = "Invite Only"
+        else:
+            lobby = self.entry_lobby.get().strip() or "—"
+            delay = self.entry_delay.get().strip() or "3"
+            summary = f"Lobby: {lobby} • Delay: {delay}s"
+        self.set_summary(summary)
+
     def set_enabled(self, enabled: bool) -> None:
-        state = "normal" if enabled else "disabled"
-        for w in self._widgets:
-            w.configure(state=state)
+        if not enabled:
+            for w in self._widgets:
+                w.configure(state="disabled")
+        else:
+            self.check_invite_only.configure(state="normal")
+            self.entry_delay.configure(state="normal")
+            self._on_toggle_invite_only()
 
     def load_config(self, config: dict) -> None:
         set_entry_text(self.entry_lobby, config.get("lobby_name", ""))
@@ -87,6 +119,8 @@ class LolSettingsForm(CollapsibleFrame):
             self.check_invite_only.select()
         else:
             self.check_invite_only.deselect()
+
+        self._on_toggle_invite_only()
 
     def get_config(self) -> dict:
         return {

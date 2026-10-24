@@ -116,6 +116,10 @@ def cancel_shutdown() -> bool:
     if sys.platform != "win32":
         return False
 
+    if not _shutdown_scheduled:
+        logger.debug("[Power] No shutdown was scheduled; cancel_shutdown is a no-op.")
+        return True
+
     if _is_test_environment() and not os.environ.get("HEXGATE_FORCE_REAL_SHUTDOWN"):
         logger.info("[Power] (Test Mode) Simulated shutdown cancellation.")
         _shutdown_scheduled = False

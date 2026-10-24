@@ -162,6 +162,23 @@ class YouTubeManager:
         except Exception as e:
             logger.warning(f"[YouTube] API client build error: {e}")
 
+    def _remove_invalid_token_file(self) -> None:
+        """Removes invalid, corrupt, or expired token and cache files from disk across candidate locations."""
+        self.channel_name = None
+        targets = set(self._candidate_token_paths())
+        if self.token_file:
+            targets.add(self.token_file)
+        if self.channel_cache_file:
+            targets.add(self.channel_cache_file)
+
+        for filepath in targets:
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    logger.info(f"[YouTube] Removed invalid token file: {filepath}")
+                except Exception as e:
+                    logger.warning(f"[YouTube] Failed to remove invalid token file {filepath}: {e}")
+
     def _load_credentials(self):
         """Loads saved OAuth credentials from token file if present and loads/resolves channel name."""
         token_path = self.get_token_path() or self.token_file
@@ -175,7 +192,12 @@ class YouTubeManager:
                         with open(self.token_file, 'w', encoding='utf-8') as token:
                             token.write(self.credentials.to_json())
                     except Exception as e:
-                        logger.warning(f"[YouTube] Token refresh error: {e}")
+                        err_str = str(e).lower()
+                        if "invalid_grant" in err_str or "token has been expired or revoked" in err_str:
+                            logger.warning("[YouTube] Stored session expired or revoked. Please relink your account.")
+                            self._remove_invalid_token_file()
+                        else:
+                            logger.warning(f"[YouTube] Token refresh error: {e}")
                         self.credentials = None
                 
                 if self.credentials and self.credentials.valid:
@@ -188,6 +210,7 @@ class YouTubeManager:
                         self._fetch_channel_name()
             except Exception as e:
                 logger.error(f"[YouTube] Error loading token file: {e}")
+                self._remove_invalid_token_file()
                 self.credentials = None
 
     def authenticate(self, force_interactive=False, on_completed=None) -> bool:
@@ -280,13 +303,7 @@ class YouTubeManager:
             self.discord_webhook_url = None
             self.discord_enabled = False
             self._notified_broadcast_ids.clear()
-            for filepath in [self.token_file, self.channel_cache_file]:
-                if os.path.exists(filepath):
-                    try:
-                        os.remove(filepath)
-                        logger.info(f"[YouTube] Removed {filepath}.")
-                    except Exception as e:
-                        logger.warning(f"[YouTube] Failed to remove {filepath}: {e}")
+            self._remove_invalid_token_file()
 
     @staticmethod
     def format_title(title_template: str) -> str:

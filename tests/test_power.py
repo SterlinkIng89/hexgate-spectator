@@ -1,6 +1,7 @@
 import sys
 import pytest
 from unittest.mock import patch, MagicMock
+import core.power
 from core.power import (
     prevent_system_sleep,
     allow_system_sleep,
@@ -74,7 +75,20 @@ def test_shutdown_system_windows_failure():
         assert res is False
 
 
+def test_cancel_shutdown_noop_when_not_scheduled():
+    core.power._shutdown_scheduled = False
+    with patch('sys.platform', 'win32'), \
+         patch.dict('os.environ', {'HEXGATE_FORCE_REAL_SHUTDOWN': '1'}), \
+         patch('subprocess.run') as mock_sub:
+        res = cancel_shutdown()
+        assert res is True
+        assert is_shutdown_scheduled() is False
+        mock_sub.assert_not_called()
+
+
 def test_cancel_shutdown_test_mode_simulation():
+    shutdown_system(delay_seconds=60)
+    assert is_shutdown_scheduled() is True
     res = cancel_shutdown()
     assert res is True
     assert is_shutdown_scheduled() is False
@@ -86,6 +100,7 @@ def test_cancel_shutdown_non_windows():
 
 
 def test_cancel_shutdown_windows_success():
+    core.power._shutdown_scheduled = True
     mock_run = MagicMock(returncode=0)
     with patch('sys.platform', 'win32'), \
          patch.dict('os.environ', {'HEXGATE_FORCE_REAL_SHUTDOWN': '1'}), \
@@ -102,6 +117,7 @@ def test_cancel_shutdown_windows_success():
 
 
 def test_cancel_shutdown_windows_no_shutdown_in_progress():
+    core.power._shutdown_scheduled = True
     mock_run = MagicMock()
     mock_run.returncode = 1
     mock_run.stderr = 'Unable to abort the system shutdown because no shutdown was in progress.(1116)'
@@ -111,3 +127,4 @@ def test_cancel_shutdown_windows_no_shutdown_in_progress():
         res = cancel_shutdown()
         assert res is True
         assert is_shutdown_scheduled() is False
+

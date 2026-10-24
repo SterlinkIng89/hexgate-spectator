@@ -9,12 +9,12 @@ from core.version import __version__
 
 # ASCII Artwork & Branding
 ASCII_ICON = [
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
 ]
 
 ASCII_TITLE = [
@@ -73,7 +73,8 @@ def render_startup_banner(
         textbox.configure(state="normal")
 
     for icon_line, title_line in zip(ASCII_ICON, ASCII_TITLE):
-        tk_text.insert("end", icon_line, "banner_icon")
+        if icon_line:
+            tk_text.insert("end", icon_line, "banner_icon")
         tk_text.insert("end", title_line + "\n", "banner_logo")
     tk_text.insert("end", ASCII_SUBTITLE + "\n\n", "banner_subtitle")
 
@@ -95,7 +96,7 @@ def render_startup_banner(
     tk_text.insert("end", "Configure lobby names and passwords in settings above.\n\n", "banner_value")
 
     tk_text.insert("end", f"{' ' * 54}Version: {version}\n", "banner_dim")
-    tk_text.insert("end", "─" * 70 + "\n\n", "banner_dim")
+    tk_text.insert("end", "─" * 70 + "\n", "banner_dim")
 
     if prev_state == "disabled":
         textbox.configure(state="disabled")

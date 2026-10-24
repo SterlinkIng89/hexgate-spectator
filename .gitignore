@@ -78,4 +78,9 @@ lcu_help.json
 config.json
 BUILD_INSTRUCTIONS.md
 
+# Temporary media dumps and runtime logs in assets/
+assets/*.png
+assets/logs/
+
+
 

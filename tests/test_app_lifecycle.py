@@ -32,12 +32,30 @@ def test_app_window_resize_and_min_size(tk_root):
             # Layout hierarchy: btn_toggle is in top_frame
             assert app.btn_toggle.master == app.top_frame
 
-            # Sequence inside top_frame: title -> status_cards -> btn_toggle -> youtube_panel
+            # Sequence inside top_frame: title_label -> status_cards -> btn_toggle -> youtube_panel
             children = app.top_frame.pack_slaves()
+            idx_title = children.index(app.title_label)
             idx_status = children.index(app.status_cards)
             idx_btn = children.index(app.btn_toggle)
             idx_yt = children.index(app.youtube_panel)
-            assert idx_status < idx_btn < idx_yt
+            assert idx_title < idx_status < idx_btn < idx_yt
+
+            # Verify title label
+            assert app.title_label.cget("text") == "Hexgate Spectator"
+        finally:
+            app.destroy()
+
+
+def test_app_window_icon_setup_handles_missing_icon(tk_root):
+    with patch("gui.app.render_startup_banner"), \
+         patch("gui.app.youtube_manager"), \
+         patch("gui.app.obs_controller"), \
+         patch("gui.app.get_icon_path", return_value=None):
+        app = App()
+        app.withdraw()
+
+        try:
+            assert app.title_label.cget("text") == "Hexgate Spectator"
         finally:
             app.destroy()
 

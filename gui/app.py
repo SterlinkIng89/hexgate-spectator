@@ -1,3 +1,4 @@
+import tkinter as tk
 import customtkinter as ctk
 import logging
 import queue
@@ -5,6 +6,7 @@ import json
 import os
 import sys
 import re
+from PIL import Image, ImageTk
 
 # Add project root directory to sys.path if running app.py directly
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -29,6 +31,10 @@ from gui.fonts import (
     get_title_font,
     get_button_font,
     get_console_font,
+)
+from core.assets import (
+    get_icon_path,
+    get_asset_path,
 )
 
 
@@ -88,6 +94,7 @@ class App(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+        tk._default_root = self
         
         # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
@@ -95,6 +102,7 @@ class App(ctk.CTk):
         self.minsize(700, 840)
         self.resizable(False, True)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._setup_window_branding()
         
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -195,6 +203,22 @@ class App(ctk.CTk):
 
         # Load saved config (if exists)
         self.load_config()
+
+    def _setup_window_branding(self) -> None:
+        """Sets native Windows titlebar and taskbar icons from bundled brand assets."""
+        try:
+            ico_path = get_icon_path()
+            if ico_path:
+                self.iconbitmap(ico_path)
+
+            png_path = get_asset_path("branding/hexgate_logo.png")
+            if png_path:
+                img = Image.open(png_path)
+                photo = ImageTk.PhotoImage(img)
+                self.wm_iconphoto(True, photo)
+                self._icon_photo_ref = photo
+        except Exception as e:
+            logging.debug(f"Window branding icon could not be set: {e}")
 
     def _on_obs_config_changed(self, obs_config: dict):
         if not self.is_running:

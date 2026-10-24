@@ -6,6 +6,7 @@ from gui.components.youtube_panel import YouTubePanel
 from gui.components.collapsible_frame import CollapsibleFrame
 from gui.components.console_toolbar import ConsoleToolbar
 from gui.components.status_footer import StatusFooter
+from gui.components.console_banner import render_startup_banner, ASCII_ICON, ASCII_TITLE
 from gui.components.lol_settings_form import LolSettingsForm
 from gui.components.obs_settings_form import ObsSettingsForm
 from gui.components.tooltip import Tooltip
@@ -658,5 +659,44 @@ def test_console_toolbar_clear_button(tk_root):
         logs_dir="logs",
     )
     toolbar_no_callback._clear_logs()
+
+
+def test_render_startup_banner(tk_root):
+    textbox = ctk.CTkTextbox(tk_root)
+    textbox.configure(state="disabled")
+
+    custom_client = "Connected (Port 1234)"
+    custom_obs = "Streaming Live"
+    custom_version = "2.0.0-test"
+
+    render_startup_banner(
+        textbox,
+        version=custom_version,
+        client_status=custom_client,
+        obs_status=custom_obs,
+    )
+
+    # State must be restored to disabled
+    assert textbox.cget("state") == "disabled"
+
+    content = textbox.get("1.0", "end")
+    assert "S P E C T A T O R" in content
+    assert custom_version in content
+    assert custom_client in content
+    assert custom_obs in content
+    assert "System Status:" in content
+    assert "Quick Tips:" in content
+
+    # Check emblem lines are present
+    for icon_line in ASCII_ICON:
+        assert icon_line.strip() in content
+
+    # Check tags configured
+    tags = textbox._textbox.tag_names()
+    assert "banner_icon" in tags
+    assert "banner_logo" in tags
+    assert "banner_section" in tags
+    assert "banner_check" in tags
+
 
 

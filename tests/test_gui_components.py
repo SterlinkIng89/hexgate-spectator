@@ -383,3 +383,35 @@ def test_obs_settings_form_shutdown_toggle_only_cancels_if_scheduled(tk_root):
         form._on_toggle_obs_shutdown()
         mock_cancel.assert_called_once()
 
+
+def test_console_toolbar_clear_button(tk_root):
+    cleared = []
+    def on_clear():
+        cleared.append(True)
+
+    toolbar = ConsoleToolbar(
+        tk_root,
+        get_log_text=lambda: "sample log text",
+        logs_dir="logs",
+        on_clear=on_clear,
+    )
+
+    assert hasattr(toolbar, "btn_clear")
+    assert toolbar.btn_clear.cget("text") == "Clear"
+    assert toolbar.btn_clear.cget("fg_color") == "transparent"
+    assert toolbar.btn_clear.cget("border_width") == 1
+    assert toolbar.btn_clear.cget("border_color") == BORDER_COLOR
+
+    # Trigger clear command
+    toolbar._clear_logs()
+    assert len(cleared) == 1
+
+    # Verify toolbar without on_clear callback does not error
+    toolbar_no_callback = ConsoleToolbar(
+        tk_root,
+        get_log_text=lambda: "",
+        logs_dir="logs",
+    )
+    toolbar_no_callback._clear_logs()
+
+

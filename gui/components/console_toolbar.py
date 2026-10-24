@@ -6,12 +6,13 @@ import customtkinter as ctk
 from gui.fonts import get_section_font, get_sub_font
 
 class ConsoleToolbar(ctk.CTkFrame):
-    def __init__(self, master, get_log_text, logs_dir: str, title: str = "Logs", **kwargs):
+    def __init__(self, master, get_log_text, logs_dir: str, on_clear=None, title: str = "Logs", **kwargs):
         kwargs.setdefault("fg_color", "transparent")
         super().__init__(master, **kwargs)
 
         self._get_log_text = get_log_text
         self._logs_dir = logs_dir
+        self._on_clear = on_clear
 
         section_font = get_section_font()
         btn_font = get_sub_font()
@@ -33,6 +34,20 @@ class ConsoleToolbar(ctk.CTkFrame):
         )
         self.btn_copy.pack(side="right", padx=(4, 0))
 
+        self.btn_clear = ctk.CTkButton(
+            self,
+            text="Clear",
+            width=65,
+            height=26,
+            font=btn_font,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#333333",
+            hover_color="#2b2b2b",
+            command=self._clear_logs,
+        )
+        self.btn_clear.pack(side="right", padx=(4, 0))
+
         self.btn_open_folder = ctk.CTkButton(
             self,
             text="Open Folder",
@@ -46,6 +61,13 @@ class ConsoleToolbar(ctk.CTkFrame):
             command=self._open_logs_folder,
         )
         self.btn_open_folder.pack(side="right", padx=(0, 4))
+
+    def _clear_logs(self) -> None:
+        try:
+            if callable(self._on_clear):
+                self._on_clear()
+        except Exception as e:
+            logging.error(f"Failed to clear console logs: {e}")
 
     def _copy_logs(self) -> None:
         try:

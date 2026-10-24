@@ -4,6 +4,7 @@ import queue
 import json
 import os
 import sys
+import re
 
 # Add project root directory to sys.path if running app.py directly
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -37,6 +38,10 @@ CONFIG_DIR = os.path.join(APPDATA, 'HexgateSpectator')
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 LOGS_DIR = os.path.join(CONFIG_DIR, 'logs')
 
+# Maximum lines retained in the Tkinter console text widget before batch trimming
+MAX_LOG_LINES = 1000
+TRIM_CHUNK = 100
+
 # Create folders if they don't exist
 if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR)
@@ -51,8 +56,11 @@ class TextboxHandler(logging.Handler):
         self.log_queue = log_queue
 
     def emit(self, record):
-        msg = self.format(record)
-        self.log_queue.put(msg)
+        try:
+            msg = self.format(record)
+            self.log_queue.put((record.levelname, msg))
+        except Exception:
+            self.handleError(record)
 
 class App(ctk.CTk):
     _OBS_DEFAULTS = {
@@ -91,6 +99,7 @@ class App(ctk.CTk):
         
         self.is_running = False
         self.log_queue = queue.Queue()
+        self._reset_dedup_state()
         self.setup_logging()
 
         # Initialize Typography System
@@ -136,6 +145,7 @@ class App(ctk.CTk):
             self,
             get_log_text=lambda: self.log_box.get("1.0", "end-1c"),
             logs_dir=LOGS_DIR,
+            on_clear=self.clear_console,
         )
         self.log_toolbar.pack(pady=(6, 2), padx=25, fill="x")
 
@@ -148,6 +158,20 @@ class App(ctk.CTk):
         # Configure tags for visual session dividers
         self.log_box._textbox.tag_config("session_start", foreground="#5dade2")
         self.log_box._textbox.tag_config("session_stop", foreground="#e67e22")
+
+        # Configure semantic log level tags
+        self.log_box._textbox.tag_config("log_error", foreground="#e74c3c")
+        self.log_box._textbox.tag_config("log_warning", foreground="#f1c40f")
+        self.log_box._textbox.tag_config("log_info", foreground="#A5D6A7")
+        self.log_box._textbox.tag_config("log_dim", foreground="#888888")
+        self.log_box._textbox.tag_config("log_time", foreground="#777777")
+
+        # Configure subsystem badge tags
+        self.log_box._textbox.tag_config("sub_obs", foreground="#5dade2")
+        self.log_box._textbox.tag_config("sub_yt", foreground="#e06c75")
+        self.log_box._textbox.tag_config("sub_power", foreground="#e67e22")
+        self.log_box._textbox.tag_config("sub_discord", foreground="#7289da")
+        self.log_box._textbox.tag_config("sub_gameflow", foreground="#2ecc71")
 
         # Render ASCII banner and initial system info
         render_startup_banner(self.log_box, version=APP_VERSION)
@@ -244,19 +268,118 @@ class App(ctk.CTk):
         except Exception as e:
             print(f"Could not setup file logger: {e}")
 
+    _SUBSYSTEM_TAGS = [
+        ("[YouTube]", "sub_yt"),
+        ("[OBS Schedule]", "sub_obs"),
+        ("[OBS]", "sub_obs"),
+        ("[Power]", "sub_power"),
+        ("[Discord]", "sub_discord"),
+        ("[GAMEFLOW]", "sub_gameflow"),
+        ("[SPECTATE]", "sub_gameflow"),
+    ]
+
+    def _reset_dedup_state(self) -> None:
+        self._last_log_msg = None
+        self._last_log_count = 0
+        self._last_log_level = None
+        self._last_log_prefix = None
+
+    def clear_console(self) -> None:
+        """Clears the console log textbox and restores the startup banner."""
+        self.log_box.configure(state="normal")
+        self.log_box._textbox.delete("1.0", "end")
+        self._reset_dedup_state()
+        render_startup_banner(self.log_box, version=APP_VERSION)
+        self.log_box.configure(state="disabled")
+
+    def _insert_log_line(self, tk_text, prefix: str, body: str, level: str, count: int = 1) -> None:
+        suffix = f" (x{count})" if count > 1 else ""
+        if level in ("ERROR", "CRITICAL"):
+            tk_text.insert("end", f"{prefix}{body}{suffix}\n", "log_error")
+        elif level == "WARNING":
+            tk_text.insert("end", f"{prefix}{body}{suffix}\n", "log_warning")
+        elif level == "DEBUG":
+            tk_text.insert("end", f"{prefix}{body}{suffix}\n", "log_dim")
+        else:
+            if prefix:
+                tk_text.insert("end", prefix, "log_time")
+            for sub_name, tag_name in self._SUBSYSTEM_TAGS:
+                if body.startswith(sub_name):
+                    tk_text.insert("end", sub_name, tag_name)
+                    tk_text.insert("end", f"{body[len(sub_name):]}{suffix}\n", "log_info")
+                    return
+            tk_text.insert("end", f"{body}{suffix}\n", "log_info")
+
     def process_log_queue(self):
-        while not self.log_queue.empty():
-            msg = self.log_queue.get()
+        if not self.log_queue.empty():
             self.log_box.configure(state="normal")
             tk_text = self.log_box._textbox
-            if "[Session Started:" in msg:
-                tk_text.insert("end", f"\n{msg}\n", "session_start")
-            elif "[Session Stopped:" in msg:
-                tk_text.insert("end", f"{msg}\n\n", "session_stop")
-            else:
-                tk_text.insert("end", msg + "\n")
-            self.log_box.see("end")
+            try:
+                at_bottom = tk_text.yview()[1] >= 0.98
+            except Exception:
+                at_bottom = True
+
+            while not self.log_queue.empty():
+                item = self.log_queue.get()
+                if isinstance(item, tuple) and len(item) == 2:
+                    level, msg = item
+                else:
+                    level, msg = "INFO", str(item)
+
+                if "[Session Started:" in msg:
+                    self._reset_dedup_state()
+                    tk_text.insert("end", f"\n{msg}\n", "session_start")
+                elif "[Session Stopped:" in msg:
+                    self._reset_dedup_state()
+                    tk_text.insert("end", f"{msg}\n\n", "session_stop")
+                else:
+                    m = re.match(r"^(\[\d{2}:\d{2}:\d{2}\]\s*)(.*)$", msg, re.DOTALL)
+                    if m:
+                        prefix = m.group(1)
+                        body = m.group(2)
+                    else:
+                        prefix = ""
+                        body = msg
+
+                    if (
+                        self._last_log_msg is not None
+                        and body == self._last_log_msg
+                        and level == self._last_log_level
+                    ):
+                        self._last_log_count += 1
+                        tk_text.delete("end-2l", "end-1l")
+                        self._insert_log_line(
+                            tk_text,
+                            self._last_log_prefix,
+                            body,
+                            level,
+                            count=self._last_log_count,
+                        )
+                    else:
+                        self._last_log_msg = body
+                        self._last_log_count = 1
+                        self._last_log_level = level
+                        self._last_log_prefix = prefix
+                        self._insert_log_line(
+                            tk_text,
+                            prefix,
+                            body,
+                            level,
+                            count=1,
+                        )
+
+            # Cap log buffer to MAX_LOG_LINES
+            try:
+                total_lines = int(tk_text.index("end-1c").split(".")[0])
+                if total_lines > MAX_LOG_LINES:
+                    tk_text.delete("1.0", f"{TRIM_CHUNK + 1}.0")
+            except Exception as e:
+                logger.debug(f"Error capping log buffer: {e}")
+
+            if at_bottom:
+                self.log_box.see("end")
             self.log_box.configure(state="disabled")
+
         self.after(100, self.process_log_queue)
 
     _STATUS_PATTERNS = [

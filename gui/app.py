@@ -92,7 +92,9 @@ class App(ctk.CTk):
         # Window Configuration
         self.title("Hexgate - Scrim Auto Spectator")
         self.geometry("700x940")
-        self.resizable(False, False)
+        self.minsize(700, 840)
+        self.resizable(False, True)
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
         
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -120,7 +122,17 @@ class App(ctk.CTk):
         self.status_cards = StatusCards(self.top_frame)
         self.status_cards.pack(pady=(0, 4), fill="x")
 
-        # YouTube Stream Panel (Placed directly under Status Cards)
+        # Primary Action Button (Start Bot / Stop Bot)
+        self.btn_toggle = ctk.CTkButton(
+            self.top_frame,
+            text="Start Bot",
+            command=self.toggle_bot,
+            font=btn_font,
+            height=38,
+        )
+        self.btn_toggle.pack(pady=(4, 4), fill="x")
+
+        # YouTube Stream Panel (Placed directly under Start Bot button)
         self.youtube_panel = YouTubePanel(
             self.top_frame,
             on_config_changed=self._on_youtube_config_changed,
@@ -137,9 +149,6 @@ class App(ctk.CTk):
             on_config_changed=self._on_obs_config_changed,
         )
         self.obs_settings_form.pack(pady=5, padx=25, fill="x")
-
-        self.btn_toggle = ctk.CTkButton(self, text="Start Bot", command=self.toggle_bot, font=btn_font, height=38)
-        self.btn_toggle.pack(pady=8, padx=25, fill="x")
 
         self.log_toolbar = ConsoleToolbar(
             self,
@@ -197,13 +206,18 @@ class App(ctk.CTk):
 
     def _update_stream_indicator(self):
         """Called every second to refresh the header stream indicator and status details."""
-        summary = obs_controller.get_status_summary(is_bot_running=self.is_running)
-        self.status_cards.update_stream_status(
-            color=summary["color"],
-            label=summary["label"],
-            detail=summary["detail"],
-        )
-        self.after(1000, self._update_stream_indicator)
+        try:
+            if not self.winfo_exists():
+                return
+            summary = obs_controller.get_status_summary(is_bot_running=self.is_running)
+            self.status_cards.update_stream_status(
+                color=summary["color"],
+                label=summary["label"],
+                detail=summary["detail"],
+            )
+            self.after(1000, self._update_stream_indicator)
+        except Exception:
+            pass
 
     def load_config(self):
         """Loads configuration from config.json and initializes fields."""
@@ -243,6 +257,22 @@ class App(ctk.CTk):
                 json.dump(config_data, f, indent=4)
         except Exception as e:
             logging.error(f"Error saving configuration: {e}")
+
+    def on_close(self) -> None:
+        """Saves configuration and cleanly stops background tasks before closing."""
+        try:
+            self.save_config()
+        except Exception as e:
+            logging.error(f"Error saving configuration on close: {e}")
+
+        if self.is_running:
+            try:
+                self.is_running = False
+                stop_bot()
+            except Exception as e:
+                logging.error(f"Error stopping bot on close: {e}")
+
+        self.destroy()
 
     def setup_logging(self):
         logger = logging.getLogger()
@@ -380,7 +410,11 @@ class App(ctk.CTk):
                 self.log_box.see("end")
             self.log_box.configure(state="disabled")
 
-        self.after(100, self.process_log_queue)
+        try:
+            if self.winfo_exists():
+                self.after(100, self.process_log_queue)
+        except Exception:
+            pass
 
     _STATUS_PATTERNS = [
         (("in progress",), "#3498db", "In Match", "Spectating game in progress"),

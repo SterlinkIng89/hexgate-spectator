@@ -48,6 +48,37 @@ def test_collapsible_frame_style(tk_root):
     assert comp.cget("border_color") == BORDER_COLOR
     assert comp.cget("border_width") == 1
 
+
+def test_collapsible_frame_summary_badge_and_toggle(tk_root):
+    comp = CollapsibleFrame(tk_root, title="Settings", collapsed=False)
+    assert comp.is_collapsed is False
+    assert comp.summary_label.cget("text") == ""
+    assert comp.summary_label.cget("text_color") == "#888888"
+
+    # Setting summary while expanded stores text but keeps label blank
+    comp.set_summary("Lobby: est • Delay: 3s")
+    assert comp.summary_label.cget("text") == ""
+
+    # Collapsing reveals stored summary text
+    comp.toggle()
+    assert comp.is_collapsed is True
+    assert comp.summary_label.cget("text") == "Lobby: est • Delay: 3s"
+
+    # Updating summary while collapsed updates label immediately
+    comp.set_summary("Invite Only")
+    assert comp.summary_label.cget("text") == "Invite Only"
+
+    # Expanding hides summary label again
+    comp.toggle()
+    assert comp.is_collapsed is False
+    assert comp.summary_label.cget("text") == ""
+
+    # Initialized as collapsed displays summary on set_summary
+    comp2 = CollapsibleFrame(tk_root, title="OBS", collapsed=True)
+    assert comp2.is_collapsed is True
+    comp2.set_summary("Disabled")
+    assert comp2.summary_label.cget("text") == "Disabled"
+
 def test_settings_forms_style(tk_root):
     comp1 = LolSettingsForm(tk_root)
     assert comp1.cget("fg_color") == SURFACE_COLOR
@@ -93,6 +124,28 @@ def test_tooltip_lifecycle(tk_root):
     assert tip._tip_window is None
 
 
+def test_lol_settings_form_summary_updates(tk_root):
+    form = LolSettingsForm(tk_root, collapsed=True)
+    assert form._summary_text == "Lobby: — • Delay: 3s"
+    assert form.summary_label.cget("text") == "Lobby: — • Delay: 3s"
+
+    form.load_config({"lobby_name": "EST scrims", "camera_delay": "4", "invite_only": 0})
+    assert form._summary_text == "Lobby: EST scrims • Delay: 4s"
+    assert form.summary_label.cget("text") == "Lobby: EST scrims • Delay: 4s"
+
+    # Switch to invite only
+    form.check_invite_only.select()
+    form._update_summary()
+    assert form._summary_text == "Invite Only"
+    assert form.summary_label.cget("text") == "Invite Only"
+
+    # Switch back
+    form.check_invite_only.deselect()
+    form._update_summary()
+    assert form._summary_text == "Lobby: EST scrims • Delay: 4s"
+    assert form.summary_label.cget("text") == "Lobby: EST scrims • Delay: 4s"
+
+
 def test_lol_settings_form_camera_delay_clarification(tk_root):
     form = LolSettingsForm(tk_root)
     assert form.lbl_camera_delay.cget("text") == "Camera Delay (s):"
@@ -120,6 +173,33 @@ def test_lol_settings_form_runtime_config_validation(tk_root):
     form.entry_delay.delete(0, "end")
     form.entry_delay.insert(0, "-5")
     assert form.get_runtime_config()["camera_delay"] == 3.0
+
+
+def test_obs_settings_form_summary_updates(tk_root):
+    form = ObsSettingsForm(tk_root, collapsed=True)
+    assert form._summary_text == "Disabled"
+    assert form.summary_label.cget("text") == "Disabled"
+
+    # Enabled without schedule
+    form.load_config({"obs_enabled": 1, "obs_schedule_enabled": 0})
+    assert form._summary_text == "Enabled"
+    assert form.summary_label.cget("text") == "Enabled"
+
+    # Enabled with schedule
+    form.load_config({
+        "obs_enabled": 1,
+        "obs_schedule_enabled": 1,
+        "obs_schedule_start_time": "11:00",
+        "obs_schedule_stop_time": "17:00",
+    })
+    assert form._summary_text == "Scheduled (11:00 AM - 05:00 PM)"
+    assert form.summary_label.cget("text") == "Scheduled (11:00 AM - 05:00 PM)"
+
+    # Toggle off obs_enabled
+    form.check_obs_enabled.deselect()
+    form._on_toggle_obs_enabled()
+    assert form._summary_text == "Disabled"
+    assert form.summary_label.cget("text") == "Disabled"
 
 
 def test_obs_settings_form_structure_and_comboboxes(tk_root):

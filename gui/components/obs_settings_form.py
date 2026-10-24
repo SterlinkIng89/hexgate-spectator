@@ -171,6 +171,8 @@ class ObsSettingsForm(CollapsibleFrame):
             self.combo_stop_ampm,
         ]
 
+        self._update_summary()
+
     @staticmethod
     def _to_24h(hour_str: str, min_str: str, ampm: str) -> str:
         """Converts 12h picker values to HH:MM (24h) string."""
@@ -293,7 +295,21 @@ class ObsSettingsForm(CollapsibleFrame):
             cancel_shutdown()
         self._notify_change()
 
+    def _update_summary(self) -> None:
+        if not hasattr(self, "check_obs_enabled"):
+            return
+        if self.check_obs_enabled.get() == 0:
+            summary = "Disabled"
+        elif self.check_obs_schedule.get() == 1:
+            start_time = f"{self.combo_start_hour.get()}:{self.combo_start_min.get()} {self.combo_start_ampm.get()}"
+            stop_time = f"{self.combo_stop_hour.get()}:{self.combo_stop_min.get()} {self.combo_stop_ampm.get()}"
+            summary = f"Scheduled ({start_time} - {stop_time})"
+        else:
+            summary = "Enabled"
+        self.set_summary(summary)
+
     def _notify_change(self):
+        self._update_summary()
         if self._on_config_changed:
             self._on_config_changed(self.get_config())
 
